@@ -54,6 +54,12 @@ compile_commands.json
 CMakeCache.txt
 _deps/
 
+# Vendor subtrees / local clones (unless committed via submodule)
+vendor/glfw/
+vendor/glm/
+vendor/imgui/
+vendor/spdlog/
+
 # Logs & temp
 *.log
 *.tmp
