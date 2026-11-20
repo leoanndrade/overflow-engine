@@ -2,17 +2,17 @@
 #include <Engine/Core/EntryPoint.h>
 #include <Engine/Core/Log.h>
 
-class EditorApp : public Engine::Application {
+class EditorApp : public Overflow::Application {
 public:
-    EditorApp() : Engine::Application("Custom 3D Engine - Editor (Estudo)") {
-        ENGINE_INFO("Editor inicializado com sucesso!");
+    EditorApp() : Overflow::Application("Overflow Engine 3D - Editor") {
+        OVERFLOW_INFO("Overflow Editor inicializado com sucesso!");
     }
 
     ~EditorApp() override {
-        ENGINE_INFO("Editor destruido.");
+        OVERFLOW_INFO("Overflow Editor finalizado.");
     }
 };
 
-Engine::Application* Engine::CreateApplication() {
+Overflow::Application* Overflow::CreateApplication() {
     return new EditorApp();
 }

@@ -3,11 +3,11 @@
 #include "Window.h"
 #include <memory>
 
-namespace Engine {
+namespace Overflow {
 
     class Application {
     public:
-        Application(const std::string& name = "Custom Engine Application");
+        Application(const std::string& name = "Overflow Engine Application");
         virtual ~Application();
 
         void Run();

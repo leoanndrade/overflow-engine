@@ -3,10 +3,10 @@
 #include "Engine/Core/Application.h"
 #include "Engine/Core/Log.h"
 
-extern Engine::Application* Engine::CreateApplication();
+extern Overflow::Application* Overflow::CreateApplication();
 
 int main(int argc, char** argv) {
-    auto app = Engine::CreateApplication();
+    auto app = Overflow::CreateApplication();
     app->Run();
     delete app;
     return 0;

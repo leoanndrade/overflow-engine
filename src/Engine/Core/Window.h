@@ -5,7 +5,7 @@
 
 struct GLFWwindow;
 
-namespace Engine {
+namespace Overflow {
 
     struct WindowProps {
         std::string Title;
@@ -13,7 +13,7 @@ namespace Engine {
         uint32_t Height;
         bool VSync;
 
-        WindowProps(const std::string& title = "Custom Engine 3D",
+        WindowProps(const std::string& title = "Overflow Engine 3D",
                     uint32_t width = 1280,
                     uint32_t height = 720,
                     bool vsync = true)

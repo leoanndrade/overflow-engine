@@ -3,7 +3,7 @@
 
 #include <glad/gl.h>
 
-namespace Engine {
+namespace Overflow {
 
     Application* Application::s_Instance = nullptr;
 
@@ -13,13 +13,13 @@ namespace Engine {
         }
 
         Log::Init();
-        ENGINE_CORE_INFO("Iniciando Engine Core...");
+        OVERFLOW_CORE_INFO("Iniciando Overflow Engine Core...");
 
         m_Window = std::make_unique<Window>(WindowProps(name));
     }
 
     Application::~Application() {
-        ENGINE_CORE_INFO("Encerrando Engine Core...");
+        OVERFLOW_CORE_INFO("Encerrando Overflow Engine Core...");
     }
 
     void Application::Close() {
@@ -27,7 +27,7 @@ namespace Engine {
     }
 
     void Application::Run() {
-        ENGINE_CORE_INFO("Entrando no Game Loop principal!");
+        OVERFLOW_CORE_INFO("Entrando no Game Loop principal!");
 
         while (m_Running) {
             if (m_Window->ShouldClose()) {
@@ -43,7 +43,7 @@ namespace Engine {
             m_Window->OnUpdate();
         }
 
-        ENGINE_CORE_INFO("Game Loop finalizado.");
+        OVERFLOW_CORE_INFO("Game Loop finalizado.");
     }
 
 }

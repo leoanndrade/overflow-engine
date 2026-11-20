@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.22)
-project(CustomEngine VERSION 0.1.0 LANGUAGES C CXX)
+project(OverflowEngine VERSION 0.1.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -56,16 +56,16 @@ target_include_directories(imgui PUBLIC
 )
 
 # -----------------------------------------------------------------------------
-# Target: Engine Core (Biblioteca Estática)
+# Target: Overflow Engine Core (Biblioteca Estática)
 # -----------------------------------------------------------------------------
 file(GLOB_RECURSE ENGINE_SOURCES
     src/Engine/*.cpp
     src/Engine/*.h
 )
 
-add_library(Engine STATIC ${ENGINE_SOURCES})
+add_library(OverflowEngine STATIC ${ENGINE_SOURCES})
 
-target_include_directories(Engine PUBLIC
+target_include_directories(OverflowEngine PUBLIC
     src
     vendor/glad/include
     vendor/glfw/include
@@ -75,7 +75,7 @@ target_include_directories(Engine PUBLIC
     vendor/stb_image
 )
 
-target_link_libraries(Engine PUBLIC
+target_link_libraries(OverflowEngine PUBLIC
     glad
     glfw
     spdlog::spdlog
@@ -84,24 +84,24 @@ target_link_libraries(Engine PUBLIC
 )
 
 if (MSVC)
-    target_compile_options(Engine PRIVATE /W4 /permissive-)
-    target_link_libraries(Engine PUBLIC opengl32.lib)
+    target_compile_options(OverflowEngine PRIVATE /W4 /permissive-)
+    target_link_libraries(OverflowEngine PUBLIC opengl32.lib)
 endif()
 
 # -----------------------------------------------------------------------------
-# Target: Editor Executável
+# Target: Overflow Editor Executável
 # -----------------------------------------------------------------------------
 file(GLOB_RECURSE EDITOR_SOURCES
     src/Editor/*.cpp
     src/Editor/*.h
 )
 
-add_executable(CustomEditor ${EDITOR_SOURCES})
+add_executable(OverflowEditor ${EDITOR_SOURCES})
 
-target_include_directories(CustomEditor PRIVATE
+target_include_directories(OverflowEditor PRIVATE
     src
 )
 
-target_link_libraries(CustomEditor PRIVATE
-    Engine
+target_link_libraries(OverflowEditor PRIVATE
+    OverflowEngine
 )

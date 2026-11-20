@@ -5,12 +5,12 @@
 #define GLFW_INCLUDE_NONE
 #include <GLFW/glfw3.h>
 
-namespace Engine {
+namespace Overflow {
 
     static uint8_t s_GLFWWindowCount = 0;
 
     static void GLFWErrorCallback(int error, const char* description) {
-        ENGINE_CORE_ERROR("GLFW Error ({0}): {1}", error, description);
+        OVERFLOW_CORE_ERROR("GLFW Error ({0}): {1}", error, description);
     }
 
     Window::Window(const WindowProps& props) {
@@ -27,12 +27,12 @@ namespace Engine {
         m_Data.Height = props.Height;
         m_Data.VSync = props.VSync;
 
-        ENGINE_CORE_INFO("Iniciando janela: {0} ({1}x{2})", props.Title, props.Width, props.Height);
+        OVERFLOW_CORE_INFO("Iniciando janela: {0} ({1}x{2})", props.Title, props.Width, props.Height);
 
         if (s_GLFWWindowCount == 0) {
             int success = glfwInit();
             if (!success) {
-                ENGINE_CORE_CRITICAL("Falha ao inicializar GLFW!");
+                OVERFLOW_CORE_CRITICAL("Falha ao inicializar GLFW!");
                 return;
             }
             glfwSetErrorCallback(GLFWErrorCallback);
@@ -51,7 +51,7 @@ namespace Engine {
         ++s_GLFWWindowCount;
 
         if (!m_Window) {
-            ENGINE_CORE_CRITICAL("Falha ao criar janela GLFW!");
+            OVERFLOW_CORE_CRITICAL("Falha ao criar janela GLFW!");
             return;
         }
 
@@ -60,13 +60,13 @@ namespace Engine {
         // Inicializar GLAD com o loader do GLFW
         int version = gladLoadGL((GLADloadfunc)glfwGetProcAddress);
         if (version == 0) {
-            ENGINE_CORE_CRITICAL("Falha ao inicializar GLAD / carregar funcoes OpenGL!");
+            OVERFLOW_CORE_CRITICAL("Falha ao inicializar GLAD / carregar funcoes OpenGL!");
             return;
         }
 
-        ENGINE_CORE_INFO("OpenGL Renderizador: {0}", (const char*)glGetString(GL_RENDERER));
-        ENGINE_CORE_INFO("OpenGL Versao:       {0}", (const char*)glGetString(GL_VERSION));
-        ENGINE_CORE_INFO("OpenGL Vendor:       {0}", (const char*)glGetString(GL_VENDOR));
+        OVERFLOW_CORE_INFO("OpenGL Renderizador: {0}", (const char*)glGetString(GL_RENDERER));
+        OVERFLOW_CORE_INFO("OpenGL Versao:       {0}", (const char*)glGetString(GL_VERSION));
+        OVERFLOW_CORE_INFO("OpenGL Vendor:       {0}", (const char*)glGetString(GL_VENDOR));
 
         glfwSetWindowUserPointer(m_Window, &m_Data);
         SetVSync(m_Data.VSync);

@@ -1,14 +1,14 @@
-# Custom 3D Game Engine (Estudo & Desenvolvimento)
+# ⚡ Overflow Engine 3D
 
-Motor de jogo 3D autônomo desenvolvido do zero em **C++20**, focado em arquitetura limpa de componentes, pipeline de renderização moderna e ferramentas de edição em tempo real.
+Um motor de jogo 3D de alta performance desenvolvido do zero em **C++20** por um único desenvolvedor (*solo dev*), focado em arquitetura modular de componentes, renderização moderna de alta fidelidade e ferramentas de edição em tempo real.
 
 ---
 
-## 🎯 Objetivos do Projeto
-- **Arquitetura Orientada a Componentes:** Estruturação de cenas intuitiva inspirada no paradigma de GameObjects/Components.
-- **RHI (Render Hardware Interface):** Abstração do pipeline gráfico para permitir múltiplas APIs (OpenGL 4.5+ DSA inicialmente, com expansão para Vulkan/DirectX).
-- **Pipeline de Renderização de Alta Fidelidade:** PBR (Physically Based Rendering), Sombras Dinâmicas, Framebuffer HDR, Tone Mapping e IBL.
-- **Editor Integrado:** Manipulação de cenas, painel de inspeção de propriedades e métricas via Dear ImGui em um viewport desacoplado.
+## 🎯 Visão do Projeto
+- **Paradigma Amigável & Performático:** Arquitetura orientada a componentes (estilo Unity GameObjects/Components) implementada com gerenciamento de memória em C++ moderno.
+- **RHI (Render Hardware Interface):** Abstração de baixo nível para permitir suporte a múltiplas APIs gráficas (iniciando em OpenGL 4.6 Core Profile com visão para Vulkan/DirectX 12).
+- **Fidelidade Gráfica de Ponta:** Pipeline PBR (Physically Based Rendering - Cook-Torrance GGX), mapeamento de sombras com PCF, iluminação IBL e pós-processamento HDR.
+- **Overflow Editor:** Editor em tempo real construído com Dear ImGui, viewport desacoplado em Framebuffer e painéis de inspeção e métricas.
 
 ---
 
@@ -16,7 +16,7 @@ Motor de jogo 3D autônomo desenvolvido do zero em **C++20**, focado em arquitet
 - **Linguagem:** C++20
 - **Compilador & Build:** MSVC / Clang / GCC via **CMake (3.22+)**
 - **Janela & Contexto:** GLFW 3.4
-- **Loader Gráfico:** GLAD (OpenGL 4.5 Core Profile)
+- **Loader Gráfico:** GLAD (OpenGL 4.6 Core Profile)
 - **Matemática:** GLM (OpenGL Mathematics)
 - **Logs:** spdlog
 - **GUI do Editor:** Dear ImGui
@@ -32,20 +32,20 @@ Motor de jogo 3D autônomo desenvolvido do zero em **C++20**, focado em arquitet
 
 ### Linha de comando
 ```bash
-# Gerar arquivos de projeto CMake
+# 1. Gerar arquivos de projeto CMake
 cmake -B build -S .
 
-# Compilar em modo Release
+# 2. Compilar o Editor da Overflow Engine
 cmake --build build --config Release
 
-# Executar a Engine / Editor
-./build/bin/Release/CustomEditor.exe
+# 3. Executar
+./build/bin/Release/OverflowEditor.exe
 ```
 
 ---
 
 ## 🗺️ Roadmap de Desenvolvimento
-- [x] **Fase 1:** Setup do repositório, CMake e criação da janela inicial com contexto OpenGL.
+- [x] **Fase 1:** Setup do repositório, CMake, RHI inicial e janela GLFW com OpenGL 4.6 Core.
 - [ ] **Fase 2:** Abstrações de GPU (`Shader`, `VertexBuffer`, `IndexBuffer`, `VertexArray`) e Câmera 3D interativa.
 - [ ] **Fase 3:** Editor ImGui com viewport em Framebuffer independente.
 - [ ] **Fase 4:** Importação de malhas 3D (`.obj`/`.gltf`) e sistema de texturas.
