@@ -46,8 +46,8 @@ cmake --build build --config Release
 
 ## 🗺️ Roadmap de Desenvolvimento
 - [x] **Fase 1:** Setup do repositório, CMake, RHI inicial e janela GLFW com OpenGL 4.6 Core.
-- [ ] **Fase 2:** Abstrações de GPU (`Shader`, `VertexBuffer`, `IndexBuffer`, `VertexArray`) e Câmera 3D interativa.
-- [ ] **Fase 3:** Editor ImGui com viewport em Framebuffer independente.
-- [ ] **Fase 4:** Importação de malhas 3D (`.obj`/`.gltf`) e sistema de texturas.
-- [ ] **Fase 5:** Grafo de Cena e arquitetura de componentes (Transform, MeshRenderer, Luzes).
-- [ ] **Fase 6:** Iluminação PBR (Cook-Torrance GGX), Sombras e Pós-Processamento.
+- [x] **Fase 2:** Abstrações de GPU (`Shader`, `VertexBuffer`, `IndexBuffer`, `VertexArray`) e Câmera 3D interativa.
+- [x] **Fase 3:** Editor ImGui com viewport em Framebuffer independente.
+- [x] **Fase 4:** Importação de malhas 3D (`.obj`/`.gltf`) e sistema de texturas.
+- [x] **Fase 5:** Grafo de Cena e arquitetura de componentes (Transform, MeshRenderer, Luzes).
+- [x] **Fase 6:** Iluminação PBR (Cook-Torrance GGX), Sombras e Pós-Processamento.

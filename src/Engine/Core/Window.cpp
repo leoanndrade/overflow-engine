@@ -1,5 +1,6 @@
 #include "Window.h"
 #include "Log.h"
+#include "Engine/Renderer/Renderer.h"
 
 #include <glad/gl.h>
 #define GLFW_INCLUDE_NONE
@@ -76,7 +77,7 @@ namespace Overflow {
             WindowData& data = *(WindowData*)glfwGetWindowUserPointer(window);
             data.Width = width;
             data.Height = height;
-            glViewport(0, 0, width, height);
+            Renderer::OnWindowResize(width, height);
         });
     }
 

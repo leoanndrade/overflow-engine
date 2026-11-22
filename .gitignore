@@ -59,7 +59,18 @@ vendor/glfw/
 vendor/glm/
 vendor/imgui/
 vendor/spdlog/
+vendor/ImGuizmo/
 
 # Logs & temp
 *.log
 *.tmp
+imgui.ini
+*.ini
+
+# IDEs
+.idea/
+
+# Distribution & installer payloads
+dist/
+installer/*.zip
+installer/*.res

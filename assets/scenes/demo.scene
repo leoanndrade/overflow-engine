@@ -1,0 +1,97 @@
+Scene: OverflowScene
+Entities:
+  - Entity: 1
+    TagComponent:
+      Tag: Sun (Directional Light)
+    TransformComponent:
+      Translation: [0.000000, 6.000000, 0.000000]
+      Rotation: [50.000000, -35.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    LightComponent:
+      Type: 0
+      Color: [1.000000, 0.980000, 0.920000]
+      Intensity: 2.500000
+      AmbientIntensity: 0.150000
+      CastShadows: 1
+      Bias: 0.003000
+  - Entity: 2
+    TagComponent:
+      Tag: Ground Plane
+    TransformComponent:
+      Translation: [0.000000, -0.500000, 0.000000]
+      Rotation: [0.000000, 0.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    MeshComponent:
+      GeometryType: 2
+      Color: [0.850000, 0.850000, 0.900000, 1.000000]
+      Metallic: 0.000000
+      Roughness: 0.850000
+      AO: 1.000000
+      Tiling: 8.000000
+      TexturePath: assets/textures/uv_checker.bmp
+  - Entity: 3
+    TagComponent:
+      Tag: Red Cube
+    TransformComponent:
+      Translation: [-2.500000, 0.500000, 0.000000]
+      Rotation: [0.000000, 0.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    MeshComponent:
+      GeometryType: 0
+      Color: [0.950000, 0.250000, 0.200000, 1.000000]
+      Metallic: 0.050000
+      Roughness: 0.350000
+      AO: 1.000000
+      Tiling: 1.000000
+      TexturePath: 
+  - Entity: 4
+    TagComponent:
+      Tag: Metallic Sphere
+    TransformComponent:
+      Translation: [0.000000, 0.500000, 0.000000]
+      Rotation: [0.000000, 0.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    MeshComponent:
+      GeometryType: 1
+      Color: [1.000000, 1.000000, 1.000000, 1.000000]
+      Metallic: 0.950000
+      Roughness: 0.120000
+      AO: 1.000000
+      Tiling: 1.000000
+      TexturePath: assets/textures/uv_checker.bmp
+  - Entity: 5
+    TagComponent:
+      Tag: Torus 3D (.obj)
+    TransformComponent:
+      Translation: [2.500000, 0.500000, 0.000000]
+      Rotation: [0.000000, 0.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    MeshComponent:
+      GeometryType: 3
+      Color: [0.200000, 0.800000, 0.950000, 1.000000]
+      Metallic: 0.900000
+      Roughness: 0.250000
+      AO: 1.000000
+      Tiling: 1.000000
+      TexturePath: 
+  - Entity: 6
+    TagComponent:
+      Tag: Satellite Child
+    TransformComponent:
+      Translation: [0.000000, 1.500000, 0.000000]
+      Rotation: [0.000000, 0.000000, 0.000000]
+      Scale: [0.350000, 0.350000, 0.350000]
+      ParentID: 4
+    MeshComponent:
+      GeometryType: 0
+      Color: [1.000000, 0.850000, 0.200000, 1.000000]
+      Metallic: 0.500000
+      Roughness: 0.300000
+      AO: 1.000000
+      Tiling: 1.000000
+      TexturePath: 
