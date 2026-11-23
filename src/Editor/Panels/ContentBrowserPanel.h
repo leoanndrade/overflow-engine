@@ -36,6 +36,19 @@ namespace Overflow {
             m_InstantiateArchetypeCallback = callback;
         }
 
+        const std::filesystem::path& GetSelectedPath() const { return m_SelectedPath; }
+        void SetSelectedPath(const std::filesystem::path& path) {
+            m_SelectedPath = path;
+            if (m_AssetSelectedCallback && !m_SelectedPath.empty()) {
+                m_AssetSelectedCallback(m_SelectedPath);
+            }
+        }
+        void ClearSelection() { m_SelectedPath = ""; }
+
+        void SetAssetSelectedCallback(const std::function<void(const std::filesystem::path&)>& callback) {
+            m_AssetSelectedCallback = callback;
+        }
+
     private:
         void DrawFolderTree(const std::filesystem::path& currentPath);
         void RenderHeaderToolbar();
@@ -60,6 +73,7 @@ namespace Overflow {
         // Callbacks de integração
         std::function<void(const std::string&)> m_OpenSceneCallback = nullptr;
         std::function<void(const std::string&)> m_InstantiateArchetypeCallback = nullptr;
+        std::function<void(const std::filesystem::path&)> m_AssetSelectedCallback = nullptr;
 
         // Modais de Criação de Assets
         bool m_ShowCreateScriptModal = false;

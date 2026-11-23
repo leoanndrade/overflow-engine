@@ -3,6 +3,7 @@
 #include "Engine/Renderer/Model.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Renderer/Material.h"
 
 #include <string>
 #include <memory>
@@ -60,6 +61,11 @@ namespace Overflow {
     struct MeshComponent {
         MeshGeometryType Geometry = MeshGeometryType::Cube;
         std::shared_ptr<Model> ModelAsset;
+
+        // Material (.ovmat)
+        std::shared_ptr<Material> MaterialAsset;
+        std::string MaterialPath = "";
+
         std::shared_ptr<Texture2D> TextureAsset;
         glm::vec4 Color{ 1.0f, 1.0f, 1.0f, 1.0f };
         float Tiling = 1.0f;

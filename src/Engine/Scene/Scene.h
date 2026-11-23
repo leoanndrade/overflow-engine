@@ -38,6 +38,22 @@ namespace Overflow {
         bool GetShowGrid() const { return m_ShowGrid; }
         void SetShowColliders(bool show) { m_ShowColliders = show; }
         bool GetShowColliders() const { return m_ShowColliders; }
+        void SetShowGizmoIcons(bool show) { m_ShowGizmoIcons = show; }
+        bool GetShowGizmoIcons() const { return m_ShowGizmoIcons; }
+        void SetShowCameraFrustums(bool show) { m_ShowCameraFrustums = show; }
+        bool GetShowCameraFrustums() const { return m_ShowCameraFrustums; }
+
+        void SetVolumetricCloudsEnabled(bool enabled) { m_VolumetricCloudsEnabled = enabled; }
+        bool GetVolumetricCloudsEnabled() const { return m_VolumetricCloudsEnabled; }
+        void SetCloudAltitudes(float baseAlt, float topAlt) { m_CloudBaseAltitude = baseAlt; m_CloudTopAltitude = topAlt; }
+        float GetCloudBaseAltitude() const { return m_CloudBaseAltitude; }
+        float GetCloudTopAltitude() const { return m_CloudTopAltitude; }
+        void SetCloudDensityMultiplier(float mult) { m_CloudDensityMultiplier = mult; }
+        float GetCloudDensityMultiplier() const { return m_CloudDensityMultiplier; }
+        void SetCloudCoverage(float coverage) { m_CloudCoverage = coverage; }
+        float GetCloudCoverage() const { return m_CloudCoverage; }
+        void SetWindSpeed(float speed) { m_WindSpeed = speed; }
+        float GetWindSpeed() const { return m_WindSpeed; }
         void SetSelectedEntity(uint32_t id) { m_SelectedEntityID = id; }
         void SetVignette(float v) { m_Vignette = v; }
         float GetVignette() const { return m_Vignette; }
@@ -86,6 +102,7 @@ namespace Overflow {
         Entity CreateSphere(const std::string& name = "3D Sphere", const glm::vec3& position = { 0.0f, 0.0f, 0.0f });
         Entity CreatePlane(const std::string& name = "3D Plane", const glm::vec3& position = { 0.0f, 0.0f, 0.0f });
         Entity CreateDirectionalLight(const std::string& name = "Directional Light", const glm::vec3& dir = { 0.6f, 1.0f, 0.4f });
+        Entity CreateCamera(const std::string& name = "Main Camera", const glm::vec3& position = { 0.0f, 2.0f, 8.0f });
 
         // Acesso aos recursos compartilhados
         std::shared_ptr<Model> GetSharedCube() const { return m_SharedCube; }
@@ -95,6 +112,10 @@ namespace Overflow {
         std::shared_ptr<Texture2D> GetWhiteTexture() const { return m_WhiteTexture; }
         std::shared_ptr<ShadowMap> GetShadowMap() const { return m_ShadowMap; }
         std::shared_ptr<Shader> GetPBRShader() const { return m_PBRShader; }
+        std::shared_ptr<Shader> GetUnlitShader() const { return m_UnlitShader; }
+        std::shared_ptr<Shader> GetBlinnPhongShader() const { return m_BlinnPhongShader; }
+        std::shared_ptr<Shader> GetShaderForType(ShaderType type) const;
+        std::shared_ptr<Material> GetDefaultMaterial() const { return m_DefaultMaterial; }
 
     public:
         // ---------------------------------------------------------------------
@@ -269,6 +290,10 @@ namespace Overflow {
         std::shared_ptr<ShadowMap> m_ShadowMap;
         std::shared_ptr<Shader> m_ShadowShader;
         std::shared_ptr<Shader> m_PBRShader;
+        std::shared_ptr<Shader> m_UnlitShader;
+        std::shared_ptr<Shader> m_BlinnPhongShader;
+        std::shared_ptr<Shader> m_WireframeShader;
+        std::shared_ptr<Material> m_DefaultMaterial;
 
         // Grade Infinita Procedural (Fase 7)
         uint32_t m_GridVAO = 0;
@@ -279,6 +304,12 @@ namespace Overflow {
 
         // Skybox Atmosférico Procedural
         std::shared_ptr<Shader> m_SkyboxShader;
+        bool m_VolumetricCloudsEnabled = true;
+        float m_CloudBaseAltitude = 80.0f;
+        float m_CloudTopAltitude = 220.0f;
+        float m_CloudDensityMultiplier = 1.0f;
+        float m_CloudCoverage = 0.5f;
+        float m_WindSpeed = 1.5f;
 
         // Wireframe de Colisores
         uint32_t m_ColliderBoxVAO = 0;
@@ -297,11 +328,6 @@ namespace Overflow {
         std::shared_ptr<Shader> m_ParticleShader;
 
     public:
-        void SetShowGizmoIcons(bool show) { m_ShowGizmoIcons = show; }
-        bool GetShowGizmoIcons() const { return m_ShowGizmoIcons; }
-        void SetShowCameraFrustums(bool show) { m_ShowCameraFrustums = show; }
-        bool GetShowCameraFrustums() const { return m_ShowCameraFrustums; }
-
         Entity CreateTerrain(const std::string& name = "Procedural Terrain", int resolution = 40, float size = 20.0f, float height = 2.5f);
     };
 

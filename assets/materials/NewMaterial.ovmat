@@ -1,0 +1,15 @@
+# Overflow Engine Material Asset (.ovmat)
+Material:
+  Name: "NewMaterial"
+  Shader: "Standard PBR"
+  AlbedoColor: [1, 1, 1, 1]
+  AlbedoTexture: ""
+  Metallic: 0
+  Roughness: 0.27
+  AO: 1
+  Tiling: 1
+  NormalMap: ""
+  UseNormalMap: 0
+  EmissionColor: [0, 0, 0]
+  EmissionIntensity: 0
+  Shininess: 32

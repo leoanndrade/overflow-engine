@@ -55,6 +55,7 @@ Copy-Item "$RootDir\src\Engine\Core\Log.h" "$DistDir\SDK\include\Engine\Core\" -
 Copy-Item "$RootDir\src\Engine\Project\Project.h" "$DistDir\SDK\include\Engine\Project\" -Force
 Copy-Item "$RootDir\src\Engine\Renderer\Texture.h" "$DistDir\SDK\include\Engine\Renderer\" -Force
 Copy-Item "$RootDir\src\Engine\Renderer\Model.h" "$DistDir\SDK\include\Engine\Renderer\" -Force
+Copy-Item "$RootDir\src\Engine\Renderer\Material.h" "$DistDir\SDK\include\Engine\Renderer\" -Force
 
 # Copia GLM para o SDK
 Copy-Item "$RootDir\vendor\glm\glm" "$DistDir\SDK\include\" -Recurse -Force
@@ -114,9 +115,37 @@ namespace Overflow
 "@
 Set-Content -Path "$DistDir\ProjectTemplate\assets\scripts\PlayerController.h" -Value $PlayerScriptContent
 Copy-Item "$RootDir\assets\textures\uv_checker.bmp" "$DistDir\ProjectTemplate\assets\textures\" -Force
-if (Test-Path "$RootDir\assets\scenes\demo.scene") {
-    Copy-Item "$RootDir\assets\scenes\demo.scene" "$DistDir\ProjectTemplate\assets\scenes\Main.scene" -Force
-}
+$CleanMainSceneContent = @"
+Scene: OverflowScene
+Entities:
+  - Entity: 1
+    TagComponent:
+      Tag: Directional Light
+    TransformComponent:
+      Translation: [0.000000, 6.000000, 0.000000]
+      Rotation: [50.000000, -35.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    LightComponent:
+      Type: 0
+      Color: [1.000000, 0.980000, 0.920000]
+      Intensity: 2.000000
+      AmbientIntensity: 0.200000
+      CastShadows: 1
+      Bias: 0.003000
+  - Entity: 2
+    TagComponent:
+      Tag: Main Camera
+    TransformComponent:
+      Translation: [0.000000, 2.000000, 8.000000]
+      Rotation: [0.000000, 0.000000, 0.000000]
+      Scale: [1.000000, 1.000000, 1.000000]
+      ParentID: 0
+    CameraComponent:
+      Primary: 1
+      DrawFrustum: 1
+"@
+Set-Content -Path "$DistDir\ProjectTemplate\assets\scenes\Main.scene" -Value $CleanMainSceneContent
 
 # 6. Compacta o payload para o instalador autônomo
 Write-Host "Compactando pacote para o instalador..." -ForegroundColor Yellow

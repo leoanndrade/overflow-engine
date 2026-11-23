@@ -47,6 +47,7 @@ namespace Overflow {
         float GetNearClip() const { return m_NearClip; }
         float GetFarClip() const { return m_FarClip; }
         float GetFOV() const { return m_FOV; }
+        void SetFOV(float fov) { m_FOV = fov; RecalculateProjection(); }
         float GetAspectRatio() const { return m_AspectRatio; }
 
         float GetMouseSensitivity() const { return m_MouseSensitivity; }

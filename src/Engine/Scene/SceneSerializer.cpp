@@ -46,6 +46,7 @@ namespace Overflow {
             if (m_Scene->HasComponent<MeshComponent>(id)) {
                 const auto& mc = m_Scene->GetComponent<MeshComponent>(id);
                 fout << "    MeshComponent:\n";
+                fout << "      MaterialPath: \"" << mc.MaterialPath << "\"\n";
                 fout << "      GeometryType: " << static_cast<int>(mc.Geometry) << "\n";
                 fout << "      Color: [" << mc.Color.r << ", " << mc.Color.g << ", " << mc.Color.b << ", " << mc.Color.a << "]\n";
                 fout << "      Metallic: " << mc.Metallic << "\n";
@@ -198,7 +199,15 @@ namespace Overflow {
                 }
             } else if (currentEntity && currentEntity.HasComponent<MeshComponent>()) {
                 auto& mc = currentEntity.GetComponent<MeshComponent>();
-                if (line.find("      GeometryType: ") != std::string::npos) {
+                if (line.find("      MaterialPath: ") != std::string::npos) {
+                    std::string matPath = line.substr(20);
+                    if (!matPath.empty() && matPath.front() == '"') matPath.erase(0, 1);
+                    if (!matPath.empty() && matPath.back() == '"') matPath.pop_back();
+                    mc.MaterialPath = matPath;
+                    if (!matPath.empty() && std::filesystem::exists(matPath)) {
+                        mc.MaterialAsset = Material::Load(matPath);
+                    }
+                } else if (line.find("      GeometryType: ") != std::string::npos) {
                     mc.Geometry = static_cast<MeshGeometryType>(std::stoi(line.substr(20)));
                     if (mc.Geometry == MeshGeometryType::Cube) mc.ModelAsset = m_Scene->GetSharedCube();
                     else if (mc.Geometry == MeshGeometryType::Sphere) mc.ModelAsset = m_Scene->GetSharedSphere();

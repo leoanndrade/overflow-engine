@@ -115,9 +115,10 @@ namespace Overflow {
     }
 
     void PerspectiveCamera::Zoom(float delta) {
-        float speed = std::clamp(m_MoveSpeed * 0.45f, 0.8f, 15.0f);
-        m_Position += m_Forward * (delta * speed);
-        m_FocalPoint = m_Position + m_Forward * m_Distance;
+        // Zoom suave e exponencial sem perder o FocalPoint do Orbit!
+        float zoomFactor = 1.0f - delta * 0.12f;
+        m_Distance = std::clamp(m_Distance * zoomFactor, 0.2f, 1000.0f);
+        m_Position = m_FocalPoint - m_Forward * m_Distance;
         RecalculateViewMatrix();
     }
 

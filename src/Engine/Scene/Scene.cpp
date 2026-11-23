@@ -7,6 +7,7 @@
 #include "Engine/Core/Log.h"
 
 #include <glad/gl.h>
+#include <GLFW/glfw3.h>
 #include <algorithm>
 #include <cmath>
 
@@ -22,6 +23,352 @@ namespace Overflow {
         }
         return local;
     }
+
+    // =========================================================================
+    // Shaders GLSL Modulares: Atmosfera Físico-Procedural, Nuvens Volumétricas 3D, Céu Cósmico e IBL
+    // =========================================================================
+    static const char* s_SkyNoiseGLSL = R"(
+        // --- 1. Funções de Ruído e Hash Pseudoaleatório 3D ---
+        float Hash31(vec3 p) {
+            p = fract(p * vec3(443.8975, 397.2973, 491.1871));
+            p += dot(p, p.yzx + 19.19);
+            return fract((p.x + p.y) * p.z);
+        }
+
+        float Noise3D(vec3 p) {
+            vec3 i = floor(p);
+            vec3 f = fract(p);
+            vec3 u = f * f * (3.0 - 2.0 * f);
+
+            return mix(mix(mix(Hash31(i + vec3(0.0, 0.0, 0.0)), Hash31(i + vec3(1.0, 0.0, 0.0)), u.x),
+                           mix(Hash31(i + vec3(0.0, 1.0, 0.0)), Hash31(i + vec3(1.0, 1.0, 0.0)), u.x), u.y),
+                       mix(mix(Hash31(i + vec3(0.0, 0.0, 1.0)), Hash31(i + vec3(1.0, 0.0, 1.0)), u.x),
+                           mix(Hash31(i + vec3(0.0, 1.0, 1.0)), Hash31(i + vec3(1.0, 1.0, 1.0)), u.x), u.y), u.z);
+        }
+    )";
+
+    static const char* s_SkyCelestialGLSL = R"(
+        // --- 2. Campo Estelar Físico Multiespectral com Cintilação Atmosférica ---
+        vec3 RenderStarfield(vec3 dir, float time) {
+            vec3 p = dir * 280.0;
+            vec3 id = floor(p);
+            vec3 f = fract(p) - 0.5;
+            float h = Hash31(id);
+            
+            vec3 starColor = vec3(0.0);
+            if (h > 0.982) {
+                float dist = length(f);
+                float temp = fract(h * 43.12);
+                vec3 spectralColor = vec3(1.0);
+                if (temp < 0.25) spectralColor = vec3(0.70, 0.85, 1.0);      // Azul Quente (Rigel/Vega)
+                else if (temp < 0.65) spectralColor = vec3(1.0, 1.0, 1.0); // Branco Puro (Sirius)
+                else if (temp < 0.85) spectralColor = vec3(1.0, 0.92, 0.70);// Amarelo Solar (Capella)
+                else spectralColor = vec3(1.0, 0.50, 0.30);                // Gigante Vermelha (Betelgeuse)
+                
+                float twinkleSpeed = 2.0 + fract(h * 89.3) * 6.0;
+                float twinkle = 0.75 + 0.25 * sin(time * twinkleSpeed + h * 6.28);
+                float mag = pow(fract(h * 117.7), 4.0) * 3.5 + 0.6;
+                float star = smoothstep(0.28, 0.02, dist) * mag * twinkle;
+                starColor = spectralColor * star;
+            }
+            return starColor;
+        }
+
+        // --- 3. Via Láctea Fotorrealista com Núcleo Galáctico e Rifts de Poeira Cósmica ---
+        vec3 RenderMilkyWay(vec3 dir) {
+            vec3 galAxis = normalize(vec3(0.45, 0.75, -0.48));
+            float distFromPlane = abs(dot(dir, galAxis));
+            vec3 coreDir = normalize(vec3(0.7, 0.25, -0.65));
+            float coreDot = max(dot(dir, coreDir), 0.0);
+            
+            float band = exp(-distFromPlane * 7.0);
+            float dustRift = 1.0 - exp(-distFromPlane * 35.0) * 0.85 * Noise3D(dir * 12.0);
+            float bulge = pow(coreDot, 6.0) * 2.5 * exp(-distFromPlane * 4.0);
+            
+            vec3 coreColor = vec3(0.18, 0.12, 0.22) * (band * dustRift + bulge);
+            coreColor += vec3(0.05, 0.09, 0.16) * band;
+            coreColor += vec3(0.12, 0.04, 0.08) * pow(coreDot, 3.0) * band;
+            return coreColor * 1.5;
+        }
+
+        // --- 4. Lua Fotorrealista Límpida (Disco Branco Puro, Halo Suave e Sem Cortes) ---
+        vec3 RenderMoon(vec3 dir, vec3 sunDir) {
+            vec3 moonDir = normalize(-sunDir + vec3(0.04, 0.18, -0.02));
+            float moonDot = max(dot(dir, moonDir), 0.0);
+            
+            // Halo de luar suave, contínuo e gradativo (sem corte brusco)
+            float moonHalo = pow(moonDot, 32.0) * 0.08 + pow(moonDot, 140.0) * 0.22;
+            vec3 haloColor = vec3(0.85, 0.90, 1.0) * moonHalo;
+            
+            // Disco lunar límpido e nítido (tamanho angular de ~0.52 graus: cos > 0.99965)
+            float diskThreshold = 0.99965;
+            float disk = smoothstep(diskThreshold - 0.0003, diskThreshold, moonDot);
+            vec3 moonColor = vec3(0.96, 0.98, 1.0) * (disk * 4.5);
+            
+            return haloColor + moonColor;
+        }
+
+        // --- 5. Disco Solar com Escurecimento de Bordo e Halo Mie Gradativo (Sem Cortes) ---
+        vec3 RenderSun(vec3 dir, vec3 sunDir, float sunElev) {
+            float sunDot = max(dot(dir, sunDir), 0.0);
+            
+            // Disco Solar nítido (~0.53 graus: cos > 0.99965)
+            float diskThreshold = 0.99965;
+            float disk = smoothstep(diskThreshold - 0.0003, diskThreshold, sunDot);
+            
+            // Escurecimento de bordo físico (Limb Darkening)
+            float r = sqrt(max(0.0, 1.0 - (1.0 - sunDot) / (1.0 - diskThreshold)));
+            float limbDarkening = 1.0 - 0.35 * (1.0 - sqrt(max(0.0, 1.0 - r * r)));
+            
+            // Shifting dinâmico de cor conforme o Sol desce para o horizonte
+            vec3 sunColor = mix(vec3(1.0, 0.38, 0.10), vec3(1.0, 0.98, 0.92), clamp(sunElev * 3.0, 0.0, 1.0));
+            vec3 sunCore = sunColor * (disk * limbDarkening * 22.0);
+            
+            // Halo contínuo suave de dispersão frontal Mie
+            float g = 0.88;
+            float miePhase = (1.0 - g * g) / pow(1.0 + g * g - 2.0 * g * sunDot, 1.5) * 0.012;
+            float sunGlow = pow(sunDot, 18.0) * 0.12 + pow(sunDot, 80.0) * 0.40;
+            vec3 corona = sunColor * (miePhase + sunGlow);
+            
+            float horizonExtinction = smoothstep(-0.06, 0.04, sunElev);
+            return (sunCore + corona) * horizonExtinction;
+        }
+    )";
+
+    static const char* s_SkyAtmosphereGLSL = R"(
+        // --- 6. Atmosfera Rayleigh & Ozônio Chappuis (Gradiente Físico Contínuo sem Cores Cartoon) ---
+        vec3 CalculateAtmosphere(vec3 dir, vec3 sunDir, float time) {
+            float sunElev = sunDir.y;
+            float viewZenith = max(dir.y, 0.0);
+            
+            float dayFactor = smoothstep(-0.10, 0.20, sunElev);
+            float sunsetFactor = smoothstep(-0.15, 0.02, sunElev) * smoothstep(0.45, 0.04, sunElev);
+            float nightFactor = 1.0 - dayFactor;
+            
+            // Atmosfera Diurna Física (Azul cerúleo profundo no zênite, névoa atmosférica suave no horizonte)
+            vec3 dayZenith = vec3(0.045, 0.13, 0.34);
+            vec3 dayHorizon = vec3(0.52, 0.65, 0.80);
+            vec3 daySky = mix(dayHorizon, dayZenith, pow(viewZenith, 0.55));
+            float sunAlign = max(dot(dir, sunDir), 0.0);
+            daySky += vec3(0.18, 0.20, 0.22) * pow(sunAlign, 3.0) * dayFactor;
+            
+            // Pôr do Sol / Amanhecer / Crepúsculo (Tons naturais de âmbar e ozônio)
+            vec3 sunsetHorizon = vec3(0.85, 0.32, 0.06);
+            vec3 sunsetMid = vec3(0.45, 0.16, 0.20);
+            vec3 sunsetZenith = vec3(0.025, 0.02, 0.07);
+            vec3 sunsetSky = mix(sunsetHorizon, sunsetMid, pow(viewZenith, 0.4));
+            sunsetSky = mix(sunsetSky, sunsetZenith, pow(viewZenith, 0.8));
+            sunsetSky += vec3(0.95, 0.55, 0.18) * pow(sunAlign, 4.0) * 1.4;
+            
+            // Cinturão de Vênus (Arco crepuscular suave no horizonte anti-solar)
+            float antiSunAlign = max(dot(dir, -vec3(sunDir.x, 0.0, sunDir.z)), 0.0);
+            vec3 beltOfVenus = vec3(0.50, 0.22, 0.32) * pow(antiSunAlign, 2.5) * exp(-abs(dir.y - 0.08) * 14.0);
+            sunsetSky += beltOfVenus * sunsetFactor * 0.8;
+            
+            // Céu Noturno Cósmico Físico (Espaço negro e límpido, sem brilho azul artificial)
+            vec3 nightZenith = vec3(0.0002, 0.0004, 0.0009);
+            vec3 nightHorizon = vec3(0.0010, 0.0018, 0.0035);
+            vec3 nightSky = mix(nightHorizon, nightZenith, pow(viewZenith, 0.5));
+            
+            if (dir.y > -0.05) {
+                vec3 stars = RenderStarfield(dir, time);
+                vec3 milkyWay = RenderMilkyWay(dir);
+                nightSky += (stars + milkyWay) * nightFactor * smoothstep(-0.02, 0.12, dir.y);
+            }
+            
+            vec3 sky = mix(nightSky, daySky, dayFactor);
+            sky = mix(sky, sunsetSky, sunsetFactor * 0.92);
+            
+            // Camada de Cirros de Alta Altitude (Wispy Cirrus Feathers no estrato superior)
+            if (dir.y > 0.04) {
+                vec2 cirrusUV = dir.xz / (dir.y + 0.15) * 1.5 + vec2(time * 0.002, time * 0.001);
+                float cirrusNoise = Noise3D(vec3(cirrusUV * 2.5, 3.2)) * 0.7 + Noise3D(vec3(cirrusUV * 6.0, 7.8)) * 0.3;
+                float cirrusMask = smoothstep(0.48, 0.82, cirrusNoise);
+                if (cirrusMask > 0.001) {
+                    vec3 cirrusColor = mix(vec3(0.003, 0.005, 0.010), mix(vec3(0.70, 0.80, 0.90), vec3(0.95, 0.45, 0.20), sunsetFactor), dayFactor);
+                    sky = mix(sky, cirrusColor, cirrusMask * 0.50 * smoothstep(0.04, 0.25, dir.y));
+                }
+            }
+            
+            return sky;
+        }
+
+        // --- 7. Avaliador Geral do Céu (Skybox + Irradiância e Reflexões IBL) ---
+        vec3 EvaluateSky(vec3 dir, vec3 sunDir, float time, bool includeDisks) {
+            vec3 sky = CalculateAtmosphere(dir, sunDir, time);
+            
+            if (includeDisks && dir.y > -0.05) {
+                vec3 sun = RenderSun(dir, sunDir, sunDir.y);
+                vec3 moon = RenderMoon(dir, sunDir) * (1.0 - smoothstep(-0.05, 0.20, sunDir.y));
+                sky += sun + moon;
+            }
+            
+            // Perspectiva Aérea do Horizonte com o Chão
+            if (dir.y < 0.0) {
+                float dayF = smoothstep(-0.10, 0.20, sunDir.y);
+                vec3 groundColor = mix(vec3(0.008, 0.010, 0.014), vec3(0.09, 0.10, 0.12), dayF);
+                sky = mix(sky, groundColor, pow(clamp(-dir.y * 3.0, 0.0, 1.0), 0.65));
+            }
+            
+            return sky;
+        }
+    )";
+
+    static const char* s_SkyVolumetricCloudsGLSL = R"(
+        uniform int u_EnableClouds;
+        uniform float u_CloudBase;
+        uniform float u_CloudTop;
+        uniform float u_CloudDensityMult;
+        uniform float u_CloudCoverage;
+        uniform float u_WindSpeed;
+
+        // --- 8. Função de Fase de Henyey-Greenstein com Lóbulos Duplos para Nuvens ---
+        float CloudPhase(float cosTheta) {
+            float g1 = 0.72;
+            float g2 = -0.22;
+            float hg1 = (1.0 - g1*g1) / pow(1.0 + g1*g1 - 2.0*g1*cosTheta, 1.5);
+            float hg2 = (1.0 - g2*g2) / pow(1.0 + g2*g2 - 2.0*g2*cosTheta, 1.5);
+            return (0.75 * hg1 + 0.25 * hg2) / (4.0 * 3.14159265);
+        }
+
+        // --- 9. Densidade de Nuvens 3D em Coordenadas de Mundo Real com Mapa Meteorológico ---
+        float SampleCloudDensity(vec3 p, vec3 wind) {
+            float mult = max(0.0, u_CloudDensityMult);
+            if (mult <= 0.001) return 0.0;
+
+            float hBase = (u_CloudBase > 1.0 ? u_CloudBase : 80.0);
+            float hTop = (u_CloudTop > hBase + 10.0 ? u_CloudTop : 220.0);
+            float h = clamp((p.y - hBase) / (hTop - hBase), 0.0, 1.0);
+            
+            // Modelagem de altura para cúmulos: base plana nítida, miolo denso e topo suavemente arredondado
+            float heightShape = smoothstep(0.0, 0.18, h) * smoothstep(1.0, 0.65, h);
+            if (heightShape <= 0.001) return 0.0;
+            
+            vec3 worldCoord = p + wind;
+            
+            // Mapa Meteorológico com cobertura dinâmica ajustável (0.0 = sem nuvens, 1.0 = cobertura total)
+            vec2 weatherUV = worldCoord.xz * 0.0012;
+            float weather = Noise3D(vec3(weatherUV, 0.5));
+            float covTarget = clamp(u_CloudCoverage > 0.001 ? u_CloudCoverage : 0.45, 0.0, 1.0);
+            float coverageThreshold = mix(0.82, 0.18, covTarget) + (weather - 0.5) * 0.22;
+            coverageThreshold = clamp(coverageThreshold, 0.04, 0.96);
+            
+            // Estrutura volumétrica de lóbulos (Worley/Billow look)
+            vec3 q = worldCoord * 0.008;
+            float baseFBM = Noise3D(q) * 0.65 + Noise3D(q * 2.1) * 0.35;
+            float billow = 1.0 - abs(baseFBM * 2.0 - 1.0);
+            float cloudNoise = mix(baseFBM, billow, 0.50);
+            
+            // Erosão de vento nas bordas
+            float detail = Noise3D(q * 4.5) * 0.20;
+            float n = cloudNoise - detail;
+            
+            if (n < coverageThreshold) return 0.0;
+            float density = (n - coverageThreshold) / max(1.0 - coverageThreshold, 0.001);
+            return density * heightShape * 2.0 * mult;
+        }
+
+        // Interseção analítica de raio com a camada de nuvens no espaço de mundo [yMin, yMax]
+        bool IntersectCloudLayer(vec3 ro, vec3 rd, float yMin, float yMax, out float t0, out float t1) {
+            float invY = 1.0 / (abs(rd.y) > 1e-4 ? rd.y : 1e-4);
+            float tA = (yMin - ro.y) * invY;
+            float tB = (yMax - ro.y) * invY;
+            t0 = min(tA, tB);
+            t1 = max(tA, tB);
+            
+            if (ro.y >= yMin && ro.y <= yMax) {
+                // Câmera está DENTRO da camada de nuvens!
+                t0 = 0.0;
+                t1 = max(t1, 0.0);
+            } else {
+                if (t1 <= 0.0) return false;
+                t0 = max(t0, 0.0);
+            }
+            
+            // Limite máximo de distância para performance e estabilidade
+            t1 = min(t1, t0 + 350.0);
+            return t1 > t0;
+        }
+
+        // --- 10. Raymarching Volumétrico 3D Nativo no Espaço de Mundo ---
+        vec4 RaymarchVolumetricClouds(vec3 ro, vec3 dir, vec3 sunDir, float time, vec3 skyBg) {
+            if (u_EnableClouds == 0) {
+                return vec4(skyBg, 1.0);
+            }
+
+            float hBase = (u_CloudBase > 1.0 ? u_CloudBase : 80.0);
+            float hTop = (u_CloudTop > hBase + 10.0 ? u_CloudTop : 220.0);
+            
+            float t0 = 0.0;
+            float t1 = 0.0;
+            if (!IntersectCloudLayer(ro, dir, hBase, hTop, t0, t1)) {
+                return vec4(skyBg, 1.0);
+            }
+            
+            float sunElev = sunDir.y;
+            float dayFactor = smoothstep(-0.10, 0.20, sunElev);
+            float sunsetFactor = smoothstep(-0.15, 0.02, sunElev) * smoothstep(0.45, 0.04, sunElev);
+            
+            // Cor da luz direta física (Sol diurno, pôr do sol ou Lua noturna)
+            vec3 sunLightColor = mix(vec3(0.95, 0.40, 0.10), vec3(1.0, 0.96, 0.90), clamp(sunElev * 3.5, 0.0, 1.0));
+            sunLightColor = mix(vec3(0.50, 0.16, 0.06), sunLightColor, smoothstep(-0.08, 0.05, sunElev));
+            vec3 moonLightColor = vec3(0.40, 0.50, 0.68) * 0.35;
+            vec3 primaryLightColor = mix(moonLightColor, sunLightColor, dayFactor);
+            vec3 primaryLightDir = (sunElev > -0.05) ? sunDir : normalize(-sunDir + vec3(0.04, 0.18, -0.02));
+            
+            // Cor ambiente física das sombras volumétricas (natural, escura à noite, sem brilho cartoon)
+            vec3 dayAmbient = vec3(0.14, 0.22, 0.36);
+            vec3 sunsetAmbient = vec3(0.12, 0.08, 0.18);
+            vec3 nightAmbient = vec3(0.0005, 0.0010, 0.0020);
+            vec3 ambientColor = mix(nightAmbient, mix(dayAmbient, sunsetAmbient, sunsetFactor), dayFactor);
+            
+            float stepSize = (t1 - t0) / 20.0;
+            vec3 wind = vec3(time * 1.5, 0.0, time * 0.8);
+            float cosTheta = dot(dir, primaryLightDir);
+            float phase = CloudPhase(cosTheta) * 3.14159265;
+            
+            // Jittering pseudoaleatório para eliminar banding
+            float seed = Hash31(dir * 120.0 + fract(time * 0.05));
+            float t = t0 + stepSize * seed;
+            
+            float transmittance = 1.0;
+            vec3 scatteredLight = vec3(0.0);
+            
+            for (int i = 0; i < 20; ++i) {
+                if (transmittance < 0.015) break;
+                
+                vec3 p = ro + dir * t;
+                float density = SampleCloudDensity(p, wind);
+                
+                if (density > 0.002) {
+                    // Light Marching: 3 passos para auto-sombreamento volumétrico real
+                    float lightOpticalDepth = 0.0;
+                    float lightStepSize = 4.5;
+                    for (int j = 1; j <= 3; ++j) {
+                        vec3 lightP = p + primaryLightDir * (float(j) * lightStepSize);
+                        lightOpticalDepth += SampleCloudDensity(lightP, wind);
+                    }
+                    
+                    // Extinção de Beer-Lambert
+                    float lightTransmittance = exp(-lightOpticalDepth * 1.4);
+                    float powderSugar = 1.0 - exp(-density * 2.2);
+                    
+                    vec3 directLight = primaryLightColor * (lightTransmittance * phase * 2.6 * powderSugar);
+                    vec3 ambientLight = ambientColor * (1.1 + 0.9 * clamp((p.y - hBase) / (hTop - hBase), 0.0, 1.0));
+                    vec3 stepLight = directLight + ambientLight;
+                    
+                    float stepExtinction = exp(-density * stepSize * 0.35);
+                    scatteredLight += transmittance * (1.0 - stepExtinction) * stepLight;
+                    transmittance *= stepExtinction;
+                }
+                
+                t += stepSize;
+            }
+            
+            vec3 finalColor = skyBg * transmittance + scatteredLight;
+            return vec4(finalColor, 1.0 - transmittance);
+        }
+    )";
 
     Scene::Scene() {
         // 1. Inicializa malhas e texturas compartilhadas
@@ -115,6 +462,7 @@ namespace Overflow {
             uniform float u_LightIntensity;
             uniform float u_AmbientIntensity;
             uniform float u_ShadowBias;
+            uniform float u_Time;
 
             uniform vec4 u_BaseColor;
             uniform float u_Metallic;
@@ -191,6 +539,7 @@ namespace Overflow {
                 return F0 + (1.0 - F0) * pow(clamp(1.0 - cosTheta, 0.0, 1.0), 5.0);
             }
 
+            // Sombras Suaves Avançadas via Vogel Disk 16-Samples com Rotação Pseudoaleatória
             float CalculateShadow(vec4 fragPosLightSpace, vec3 normal, vec3 lightDir) {
                 vec3 projCoords = fragPosLightSpace.xyz / fragPosLightSpace.w;
                 projCoords = projCoords * 0.5 + 0.5;
@@ -198,19 +547,25 @@ namespace Overflow {
                 if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 || projCoords.y < 0.0 || projCoords.y > 1.0)
                     return 0.0;
 
-                float bias = max(u_ShadowBias * (1.0 - dot(normal, lightDir)), u_ShadowBias * 0.2);
+                float bias = max(u_ShadowBias * (1.0 - dot(normal, lightDir)), u_ShadowBias * 0.15);
 
-                // PCF (Percentage-Closer Filtering) 3x3 suave
                 float shadow = 0.0;
                 vec2 texelSize = 1.0 / vec2(textureSize(u_ShadowMap, 0));
-                for(int x = -1; x <= 1; ++x) {
-                    for(int y = -1; y <= 1; ++y) {
-                        float pcfDepth = texture(u_ShadowMap, projCoords.xy + vec2(float(x), float(y)) * texelSize).r;
-                        shadow += (projCoords.z - bias > pcfDepth) ? 1.0 : 0.0;
-                    }
+                float goldenAngle = 2.39996323;
+                float seed = dot(v_FragPos.xy + v_FragPos.z, vec2(12.9898, 78.233));
+                float randomAngle = fract(sin(seed) * 43758.5453) * 6.2831853;
+                float cosA = cos(randomAngle);
+                float sinA = sin(randomAngle);
+                mat2 rot = mat2(cosA, -sinA, sinA, cosA);
+
+                for (int i = 0; i < 16; ++i) {
+                    float r = sqrt(float(i) + 0.5) / 4.0;
+                    float theta = float(i) * goldenAngle;
+                    vec2 offset = rot * (vec2(cos(theta), sin(theta)) * r * texelSize * 2.2);
+                    float pcfDepth = texture(u_ShadowMap, projCoords.xy + offset).r;
+                    shadow += (projCoords.z - bias > pcfDepth) ? 1.0 : 0.0;
                 }
-                shadow /= 9.0;
-                return shadow;
+                return shadow / 16.0;
             }
 
             vec3 GetNormalFromMap() {
@@ -225,7 +580,7 @@ namespace Overflow {
                 mat3 TBN = mat3(T, B, N);
                 return normalize(TBN * tangentNormal);
             }
-
+        )" + std::string(s_SkyNoiseGLSL) + s_SkyCelestialGLSL + s_SkyAtmosphereGLSL + R"(
             void main() {
                 vec4 texColor = texture(u_AlbedoTexture, v_TexCoord * u_Tiling);
                 vec3 albedo = pow(texColor.rgb * v_Color.rgb * u_BaseColor.rgb, vec3(2.2));
@@ -239,6 +594,7 @@ namespace Overflow {
                 vec3 F0 = vec3(0.04);
                 F0 = mix(F0, albedo, u_Metallic);
 
+                // 1. Luz Direcional Principal (Sol / Lua)
                 vec3 radiance = u_LightColor * u_LightIntensity;
 
                 float NDF = DistributionGGX(N, H, u_Roughness);
@@ -246,8 +602,7 @@ namespace Overflow {
                 vec3 F    = FresnelSchlick(max(dot(H, V), 0.0), F0);
 
                 vec3 kS = F;
-                vec3 kD = vec3(1.0) - kS;
-                kD *= 1.0 - u_Metallic;
+                vec3 kD = (vec3(1.0) - kS) * (1.0 - u_Metallic);
 
                 vec3 numerator    = NDF * G * F;
                 float denominator = 4.0 * max(dot(N, V), 0.0) * max(dot(N, L), 0.0) + 0.0001;
@@ -259,7 +614,7 @@ namespace Overflow {
                 float shadow = CalculateShadow(v_FragPosLightSpace, N, L);
                 Lo *= (1.0 - shadow);
 
-                // Contribuição PBR de Point Lights (Atenuação Física Quadrática)
+                // 2. Contribuição PBR de Point Lights (Atenuação Física Quadrática)
                 for (int i = 0; i < u_PointLightCount; ++i) {
                     vec3 toLight = u_PointLights[i].position - v_FragPos;
                     float dist = length(toLight);
@@ -284,7 +639,7 @@ namespace Overflow {
                     Lo += (kD_p * albedo / PI + spec_p) * rad_p * NdotL_p;
                 }
 
-                // Contribuição PBR de Spot Lights (Holofotes com Penumbra Suave)
+                // 3. Contribuição PBR de Spot Lights (Holofotes com Penumbra Suave)
                 for (int i = 0; i < u_SpotLightCount; ++i) {
                     vec3 toLight = u_SpotLights[i].position - v_FragPos;
                     float dist = length(toLight);
@@ -313,11 +668,25 @@ namespace Overflow {
                     Lo += (kD_s * albedo / PI + spec_s) * rad_s * NdotL_s;
                 }
 
-                vec3 ambient = u_AmbientIntensity * albedo * u_AO;
-                vec3 emissive = u_EmissionColor * u_EmissionIntensity;
-                vec3 color = ambient + Lo + emissive;
+                // 4. Image-Based Lighting (IBL) - Irradiância Hemisférica do Céu Atmosférico
+                vec3 skyIrradiance = EvaluateSky(N, L, u_Time, false);
+                vec3 groundBounce = vec3(0.07, 0.06, 0.05) * clamp(-N.y, 0.0, 1.0);
+                vec3 ambientDome = (skyIrradiance * clamp(N.y * 0.5 + 0.5, 0.15, 1.0) + groundBounce) * u_AmbientIntensity;
+                vec3 ambientDiffuse = ambientDome * albedo * u_AO * kD;
 
-                // Tone Mapping ACES Film
+                // 5. Image-Based Lighting (IBL) - Reflexão Especular do Céu e Nuvens
+                vec3 R = reflect(-V, N);
+                vec3 skyReflection = EvaluateSky(R, L, u_Time, u_Roughness < 0.25);
+                vec3 blurredReflection = mix(skyReflection, ambientDome, clamp(u_Roughness * 1.25, 0.0, 1.0));
+                vec3 Fr = F0 + (max(vec3(1.0 - u_Roughness), F0) - F0) * pow(clamp(1.0 - max(dot(N, V), 0.0), 0.0, 1.0), 5.0);
+                vec3 ambientSpecular = blurredReflection * Fr * u_AO;
+
+                // 6. Emissão de Luz
+                vec3 emissive = u_EmissionColor * u_EmissionIntensity;
+
+                vec3 color = ambientDiffuse + ambientSpecular + Lo + emissive;
+
+                // 7. Tone Mapping ACES Film
                 color *= u_Exposure;
                 float a = 2.51;
                 float b = 0.03;
@@ -326,10 +695,10 @@ namespace Overflow {
                 float e = 0.14;
                 color = clamp((color * (a * color + b)) / (color * (c * color + d) + e), 0.0, 1.0);
 
-                // Gamma Correction 2.2
+                // 8. Gamma Correction 2.2
                 color = pow(color, vec3(1.0 / 2.2));
 
-                // Vinheta Cinematográfica
+                // 9. Vinheta Cinematográfica
                 if (u_Vignette > 0.01) {
                     float dist = length(v_TexCoord - vec2(0.5));
                     float vig = smoothstep(0.75, 0.75 - u_Vignette * 0.35, dist);
@@ -342,6 +711,99 @@ namespace Overflow {
         )";
 
         m_PBRShader = Shader::Create("ScenePBRShader", pbrVertexSrc, pbrFragmentSrc);
+
+        // Shader Unlit / Flat Color & Texture (Sem luzes, ideal para UI, efeitos e cartoon)
+        std::string unlitFragmentSrc = R"(
+            #version 460 core
+
+            in vec3 v_FragPos;
+            in vec3 v_Normal;
+            in vec2 v_TexCoord;
+            in vec4 v_Color;
+
+            layout(location = 0) out vec4 o_Color;
+            layout(location = 1) out int o_EntityID;
+
+            uniform int u_EntityID;
+            uniform sampler2D u_AlbedoTexture;
+            uniform vec4 u_BaseColor;
+            uniform float u_Tiling;
+
+            void main() {
+                vec4 texColor = texture(u_AlbedoTexture, v_TexCoord * u_Tiling);
+                o_Color = texColor * v_Color * u_BaseColor;
+                o_EntityID = u_EntityID;
+            }
+        )";
+        m_UnlitShader = Shader::Create("SceneUnlitShader", pbrVertexSrc, unlitFragmentSrc);
+
+        // Shader Blinn-Phong Clássico (Diffuse + Specular + Ambient com IBL Atmosférico)
+        std::string blinnPhongFragmentSrc = R"(
+            #version 460 core
+
+            in vec3 v_FragPos;
+            in vec3 v_Normal;
+            in vec2 v_TexCoord;
+            in vec4 v_Color;
+
+            layout(location = 0) out vec4 o_Color;
+            layout(location = 1) out int o_EntityID;
+
+            uniform int u_EntityID;
+            uniform sampler2D u_AlbedoTexture;
+            uniform vec4 u_BaseColor;
+            uniform float u_Tiling;
+            uniform float u_Shininess;
+
+            uniform vec3 u_CameraPosition;
+            uniform vec3 u_LightDirection;
+            uniform vec3 u_LightColor;
+            uniform float u_LightIntensity;
+            uniform float u_AmbientIntensity;
+            uniform float u_Time;
+        )" + std::string(s_SkyNoiseGLSL) + s_SkyCelestialGLSL + s_SkyAtmosphereGLSL + R"(
+            void main() {
+                vec4 texColor = texture(u_AlbedoTexture, v_TexCoord * u_Tiling);
+                vec3 diffuseColor = texColor.rgb * v_Color.rgb * u_BaseColor.rgb;
+
+                vec3 N = normalize(v_Normal);
+                vec3 L = normalize(u_LightDirection);
+                vec3 V = normalize(u_CameraPosition - v_FragPos);
+                vec3 H = normalize(L + V);
+
+                vec3 skyAmb = EvaluateSky(N, L, u_Time, false);
+                vec3 ambient = skyAmb * diffuseColor * u_AmbientIntensity;
+                float diff = max(dot(N, L), 0.0);
+                vec3 diffuse = diff * diffuseColor * u_LightColor * u_LightIntensity;
+
+                float spec = pow(max(dot(N, H), 0.0), max(u_Shininess, 1.0));
+                vec3 specular = spec * u_LightColor * u_LightIntensity * 0.5;
+
+                vec3 result = ambient + diffuse + specular;
+                o_Color = vec4(result, texColor.a * v_Color.a * u_BaseColor.a);
+                o_EntityID = u_EntityID;
+            }
+        )";
+        m_BlinnPhongShader = Shader::Create("SceneBlinnPhongShader", pbrVertexSrc, blinnPhongFragmentSrc);
+
+        // Shader Wireframe
+        std::string wireframeFragmentSrc = R"(
+            #version 460 core
+
+            layout(location = 0) out vec4 o_Color;
+            layout(location = 1) out int o_EntityID;
+
+            uniform int u_EntityID;
+            uniform vec4 u_BaseColor;
+
+            void main() {
+                o_Color = u_BaseColor;
+                o_EntityID = u_EntityID;
+            }
+        )";
+        m_WireframeShader = Shader::Create("SceneWireframeShader", pbrVertexSrc, wireframeFragmentSrc);
+
+        m_DefaultMaterial = Material::Create("Default-Material", ShaderType::StandardPBR);
 
         // 5. Shader da Grade Infinita Procedural (Anti-aliased Screen-Space Grid estilo Blender/Unreal)
         std::string gridVertexSrc = R"(
@@ -450,7 +912,7 @@ namespace Overflow {
         m_GridShader = Shader::Create("InfiniteGridShader", gridVertexSrc, gridFragmentSrc);
         glGenVertexArrays(1, &m_GridVAO);
 
-        // 6. Shader do Skybox Atmosférico Procedural (Atmosfera Dinâmica com Disco Solar)
+        // 6. Shader do Skybox Atmosférico Fotorrealista (Ciclo Dinâmico Dia/Pôr-do-sol/Noite, Estrelas, Lua, Sol e Nebulosa)
         std::string skyboxVert = R"(
             #version 460 core
             layout(location = 0) in vec3 a_Position;
@@ -467,25 +929,38 @@ namespace Overflow {
 
         std::string skyboxFrag = R"(
             #version 460 core
+        )" + std::string(s_SkyNoiseGLSL) + s_SkyCelestialGLSL + s_SkyAtmosphereGLSL + s_SkyVolumetricCloudsGLSL + R"(
             in vec3 v_TexCoord;
             layout(location = 0) out vec4 o_Color;
             layout(location = 1) out int o_EntityID;
+
+            uniform vec3 u_CameraPosition;
             uniform vec3 u_SunDirection;
+            uniform float u_Time;
+
             void main() {
                 vec3 dir = normalize(v_TexCoord);
                 vec3 sunDir = normalize(u_SunDirection);
+                
+                // 1. Atmosfera e Corpos Celestes (Sol, Lua, Estrelas e Via Láctea)
+                vec3 skyBg = EvaluateSky(dir, sunDir, u_Time, true);
 
-                vec3 zenith = vec3(0.18, 0.42, 0.85);
-                vec3 horizon = vec3(0.82, 0.72, 0.62);
-                vec3 ground = vec3(0.12, 0.12, 0.14);
+                // 2. Nuvens Volumétricas 3D Nativas em Coordenadas de Mundo Real
+                vec4 cloudResult = RaymarchVolumetricClouds(u_CameraPosition, dir, sunDir, u_Time, skyBg);
+                vec3 finalSky = cloudResult.rgb;
 
-                vec3 sky = (dir.y > 0.0) ? mix(horizon, zenith, pow(dir.y, 0.65)) : mix(horizon, ground, pow(-dir.y, 0.5));
-                float sunDot = max(dot(dir, sunDir), 0.0);
-                float sunDisk = smoothstep(0.998, 0.9995, sunDot) * 3.5;
-                float sunGlow = pow(sunDot, 16.0) * 0.45;
-                vec3 sun = vec3(1.0, 0.95, 0.82) * (sunDisk + sunGlow);
+                // 3. Tone Mapping ACES Film Cinematográfico
+                float a = 2.51;
+                float b = 0.03;
+                float c = 2.43;
+                float d = 0.59;
+                float e = 0.14;
+                finalSky = clamp((finalSky * (a * finalSky + b)) / (finalSky * (c * finalSky + d) + e), 0.0, 1.0);
 
-                o_Color = vec4(sky + sun, 1.0);
+                // 4. Gamma Correction 2.2
+                finalSky = pow(finalSky, vec3(1.0 / 2.2));
+
+                o_Color = vec4(finalSky, 1.0);
                 o_EntityID = -1;
             }
         )";
@@ -1165,11 +1640,33 @@ namespace Overflow {
             }
         }
 
+        float time = static_cast<float>(glfwGetTime());
+
+        // Adaptação física cinematográfica do Sol e da Lua
+        glm::vec3 effectiveLightDir = lightDir;
+        glm::vec3 effectiveLightColor = lightColor;
+        float effectiveLightIntensity = lightIntensity;
+
+        float sunElev = lightDir.y;
+        if (sunElev < -0.05f) {
+            // Noite Cósmica: A Lua assume como a fonte primária de luz direcional
+            glm::vec3 moonDir = glm::normalize(-lightDir + glm::vec3(0.05f, 0.18f, -0.04f));
+            effectiveLightDir = moonDir;
+            effectiveLightColor = glm::vec3(0.68f, 0.78f, 0.96f); // Luz prateada suave da Lua
+            effectiveLightIntensity = lightIntensity * 0.35f;
+        } else if (sunElev < 0.25f) {
+            // Pôr do Sol / Amanhecer (Golden Hour): tons dourados e avermelhados intensos
+            float sunsetAlpha = std::clamp((0.25f - sunElev) / 0.30f, 0.0f, 1.0f);
+            glm::vec3 goldenSunset = glm::vec3(1.0f, 0.52f, 0.18f);
+            effectiveLightColor = glm::mix(lightColor, goldenSunset, sunsetAlpha);
+            effectiveLightIntensity = lightIntensity * glm::mix(1.0f, 0.65f, sunsetAlpha);
+        }
+
         // ---------------------------------------------------------------------
         // PASSO 1: Passe de Sombra (Renderização da Profundidade no ShadowMap)
         // ---------------------------------------------------------------------
         if (hasShadows && m_ShadowMap) {
-            m_ShadowMap->CalculateLightSpaceMatrix(lightDir);
+            m_ShadowMap->CalculateLightSpaceMatrix(effectiveLightDir);
             m_ShadowMap->Bind();
 
             glEnable(GL_DEPTH_TEST);
@@ -1218,6 +1715,14 @@ namespace Overflow {
             m_SkyboxShader->SetMat4("u_View", camera.GetViewMatrix());
             m_SkyboxShader->SetMat4("u_Projection", camera.GetProjection());
             m_SkyboxShader->SetFloat3("u_SunDirection", lightDir);
+            m_SkyboxShader->SetFloat3("u_CameraPosition", camera.GetPosition());
+            m_SkyboxShader->SetFloat("u_Time", time);
+            m_SkyboxShader->SetInt("u_EnableClouds", m_VolumetricCloudsEnabled ? 1 : 0);
+            m_SkyboxShader->SetFloat("u_CloudBase", m_CloudBaseAltitude);
+            m_SkyboxShader->SetFloat("u_CloudTop", m_CloudTopAltitude);
+            m_SkyboxShader->SetFloat("u_CloudDensityMult", m_CloudDensityMultiplier);
+            m_SkyboxShader->SetFloat("u_CloudCoverage", m_CloudCoverage);
+            m_SkyboxShader->SetFloat("u_WindSpeed", m_WindSpeed);
             m_SharedCube->Draw(m_SkyboxShader);
             glDepthFunc(GL_LESS);
         }
@@ -1232,13 +1737,14 @@ namespace Overflow {
         activeShader->SetMat4("u_LightSpaceMatrix", m_ShadowMap ? m_ShadowMap->GetLightSpaceMatrix() : glm::mat4(1.0f));
         activeShader->SetFloat3("u_CameraPosition", camera.GetPosition());
 
-        activeShader->SetFloat3("u_LightDirection", lightDir);
-        activeShader->SetFloat3("u_LightColor", lightColor);
-        activeShader->SetFloat("u_LightIntensity", lightIntensity);
+        activeShader->SetFloat3("u_LightDirection", effectiveLightDir);
+        activeShader->SetFloat3("u_LightColor", effectiveLightColor);
+        activeShader->SetFloat("u_LightIntensity", effectiveLightIntensity);
         activeShader->SetFloat("u_AmbientIntensity", ambientIntensity);
         activeShader->SetFloat("u_ShadowBias", shadowBias);
         activeShader->SetFloat("u_Exposure", m_Exposure);
         activeShader->SetFloat("u_Vignette", m_Vignette);
+        activeShader->SetFloat("u_Time", time);
 
         // Upload de Múltiplas Luzes (Point Lights e Spot Lights)
         int pointLightCount = 0;
@@ -1299,31 +1805,57 @@ namespace Overflow {
             const auto& transform = m_Transforms.at(id);
             glm::mat4 worldTransform = transform.GetWorldTransform(this);
 
-            activeShader->SetMat4("u_Transform", worldTransform);
-            activeShader->SetInt("u_EntityID", static_cast<int>(id));
-            activeShader->SetFloat4("u_BaseColor", mesh.Color);
-            activeShader->SetFloat("u_Metallic", mesh.Metallic);
-            activeShader->SetFloat("u_Roughness", mesh.Roughness);
-            activeShader->SetFloat("u_AO", mesh.AO);
-            activeShader->SetFloat("u_Tiling", mesh.Tiling);
-            activeShader->SetFloat3("u_EmissionColor", mesh.EmissionColor);
-            activeShader->SetFloat("u_EmissionIntensity", mesh.EmissionIntensity);
-
-            if (mesh.TextureAsset) {
-                mesh.TextureAsset->Bind(0);
-            } else {
-                m_WhiteTexture->Bind(0);
+            auto material = mesh.MaterialAsset ? mesh.MaterialAsset : m_DefaultMaterial;
+            if (!mesh.MaterialAsset) {
+                m_DefaultMaterial->AlbedoColor = mesh.Color;
+                m_DefaultMaterial->AlbedoTexture = mesh.TextureAsset;
+                m_DefaultMaterial->Metallic = mesh.Metallic;
+                m_DefaultMaterial->Roughness = mesh.Roughness;
+                m_DefaultMaterial->AO = mesh.AO;
+                m_DefaultMaterial->Tiling = mesh.Tiling;
+                m_DefaultMaterial->NormalMap = mesh.NormalMapAsset;
+                m_DefaultMaterial->UseNormalMap = mesh.UseNormalMap;
+                m_DefaultMaterial->EmissionColor = mesh.EmissionColor;
+                m_DefaultMaterial->EmissionIntensity = mesh.EmissionIntensity;
             }
 
-            if (mesh.UseNormalMap && mesh.NormalMapAsset) {
-                mesh.NormalMapAsset->Bind(2);
-                activeShader->SetInt("u_NormalMap", 2);
-                activeShader->SetInt("u_UseNormalMap", 1);
-            } else {
-                activeShader->SetInt("u_UseNormalMap", 0);
+            std::shared_ptr<Shader> matShader = customShader ? customShader : GetShaderForType(material->Type);
+            matShader->Bind();
+
+            matShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
+            matShader->SetMat4("u_LightSpaceMatrix", m_ShadowMap ? m_ShadowMap->GetLightSpaceMatrix() : glm::mat4(1.0f));
+            matShader->SetFloat3("u_CameraPosition", camera.GetPosition());
+
+            matShader->SetFloat3("u_LightDirection", effectiveLightDir);
+            matShader->SetFloat3("u_LightColor", effectiveLightColor);
+            matShader->SetFloat("u_LightIntensity", effectiveLightIntensity);
+            matShader->SetFloat("u_AmbientIntensity", ambientIntensity);
+            matShader->SetFloat("u_ShadowBias", shadowBias);
+            matShader->SetFloat("u_Exposure", m_Exposure);
+            matShader->SetFloat("u_Vignette", m_Vignette);
+            matShader->SetFloat("u_Time", time);
+
+            matShader->SetInt("u_PointLightCount", pointLightCount);
+            matShader->SetInt("u_SpotLightCount", spotLightCount);
+
+            matShader->SetInt("u_AlbedoTexture", 0);
+            matShader->SetInt("u_ShadowMap", 1);
+            if (m_ShadowMap) {
+                m_ShadowMap->BindTexture(1);
             }
 
-            mesh.ModelAsset->Draw(activeShader);
+            matShader->SetMat4("u_Transform", worldTransform);
+            matShader->SetInt("u_EntityID", static_cast<int>(id));
+
+            material->Bind(matShader, m_WhiteTexture);
+
+            if (material->Type == ShaderType::Wireframe) {
+                glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+                mesh.ModelAsset->Draw(matShader);
+                glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+            } else {
+                mesh.ModelAsset->Draw(matShader);
+            }
         }
 
         Renderer::EndScene();
@@ -1583,6 +2115,19 @@ namespace Overflow {
         return entity;
     }
 
+    Entity Scene::CreateCamera(const std::string& name, const glm::vec3& position) {
+        Entity entity = CreateEntity(name);
+        auto& tc = entity.GetComponent<TransformComponent>();
+        tc.Translation = position;
+        tc.Rotation = { 0.0f, 0.0f, 0.0f };
+
+        auto& cam = entity.AddComponent<CameraComponent>();
+        cam.Primary = true;
+        cam.Camera.SetPosition(position);
+        cam.Camera.SetRotation(0.0f, -90.0f);
+        return entity;
+    }
+
     Entity Scene::CreateTerrain(const std::string& name, int resolution, float size, float height) {
         Entity entity = CreateEntity(name);
         entity.GetComponent<TransformComponent>().Translation = { 0.0f, 0.0f, 0.0f };
@@ -1641,6 +2186,20 @@ namespace Overflow {
         col.Size = { size, height * 2.0f, size };
 
         return entity;
+    }
+
+    std::shared_ptr<Shader> Scene::GetShaderForType(ShaderType type) const {
+        switch (type) {
+            case ShaderType::Unlit:
+                return m_UnlitShader ? m_UnlitShader : m_PBRShader;
+            case ShaderType::BlinnPhong:
+                return m_BlinnPhongShader ? m_BlinnPhongShader : m_PBRShader;
+            case ShaderType::Wireframe:
+                return m_WireframeShader ? m_WireframeShader : m_PBRShader;
+            case ShaderType::StandardPBR:
+            default:
+                return m_PBRShader;
+        }
     }
 
 }

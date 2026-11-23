@@ -1,6 +1,7 @@
 #include "ContentBrowserPanel.h"
 #include "Editor/EditorPreferences.h"
 #include "Engine/Core/Log.h"
+#include "Engine/Renderer/Material.h"
 
 #include <imgui.h>
 #include <fstream>
@@ -187,25 +188,7 @@ namespace Overflow {
             }
         }
 
-        // 3. Botão [+ Add Asset]
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.45f, 0.28f, 0.85f));
-        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.58f, 0.35f, 1.0f));
-        if (ImGui::Button("+ Add", ImVec2(55.0f, 22.0f))) {
-            ImGui::OpenPopup("ContentBrowserAddPopup");
-        }
-        ImGui::PopStyleColor(2);
-
-        if (ImGui::BeginPopup("ContentBrowserAddPopup")) {
-            if (ImGui::MenuItem("C++ Script (EntityBehavior)...")) m_ShowCreateScriptModal = true;
-            if (ImGui::MenuItem("GLSL Shader (.glsl)...")) m_ShowCreateShaderModal = true;
-            if (ImGui::MenuItem("Entity Archetype (.ovbp)...")) m_ShowCreateArchetypeModal = true;
-            if (ImGui::MenuItem("Material Asset (.ovmat)...")) m_ShowCreateMaterialModal = true;
-            ImGui::Separator();
-            if (ImGui::MenuItem("New Folder...")) m_ShowNewFolderModal = true;
-            ImGui::EndPopup();
-        }
-
-        ImGui::SameLine();
+        // 3. Campo de Busca com filtro (Sem botão + Add, criação via Botão Direito ou Menu Assets)
 
         // 4. Campo de Busca com filtro
         float searchPos = ImGui::GetWindowContentRegionMax().x - 390.0f;
@@ -315,6 +298,9 @@ namespace Overflow {
 
             if (ImGui::Button(buttonLabel.c_str(), ImVec2(m_ThumbnailSize, m_ThumbnailSize))) {
                 m_SelectedPath = path;
+                if (m_AssetSelectedCallback) {
+                    m_AssetSelectedCallback(m_SelectedPath);
+                }
             }
 
             // Duplo clique detectado no item
@@ -422,6 +408,9 @@ namespace Overflow {
                 std::string label = icon + filename;
                 if (ImGui::Selectable(label.c_str(), selected, ImGuiSelectableFlags_SpanAllColumns)) {
                     m_SelectedPath = path;
+                    if (m_AssetSelectedCallback) {
+                        m_AssetSelectedCallback(m_SelectedPath);
+                    }
                 }
 
                 // Duplo clique na linha da lista
@@ -468,12 +457,12 @@ namespace Overflow {
     }
 
     void ContentBrowserPanel::RenderContextMenu() {
-        if (ImGui::BeginPopupContextWindow("ContentBrowserGridContextMenu", ImGuiPopupFlags_MouseButtonRight | ImGuiPopupFlags_NoOpenOverItems)) {
+        if (ImGui::BeginPopupContextWindow("ContentBrowserGridContextMenu", ImGuiPopupFlags_MouseButtonRight)) {
             if (ImGui::BeginMenu("+ Create")) {
-                if (ImGui::MenuItem("C++ EntityBehavior Script...")) m_ShowCreateScriptModal = true;
+                if (ImGui::MenuItem("Material Asset (.ovmat)...")) m_ShowCreateMaterialModal = true;
+                if (ImGui::MenuItem("C++ Script (OBehaviour)...")) m_ShowCreateScriptModal = true;
                 if (ImGui::MenuItem("GLSL PBR Shader File (.glsl)...")) m_ShowCreateShaderModal = true;
                 if (ImGui::MenuItem("Entity Archetype (.ovbp)...")) m_ShowCreateArchetypeModal = true;
-                if (ImGui::MenuItem("Material Asset (.ovmat)...")) m_ShowCreateMaterialModal = true;
                 ImGui::Separator();
                 if (ImGui::MenuItem("New Folder...")) m_ShowNewFolderModal = true;
                 ImGui::EndMenu();
@@ -804,22 +793,9 @@ namespace Overflow {
         if (clean.find(".ovmat") == std::string::npos) clean += ".ovmat";
 
         std::filesystem::path filePath = m_CurrentDirectory / clean;
-        std::ofstream fout(filePath);
-        if (fout.is_open()) {
-            fout << "# Overflow Engine Material Asset (.ovmat)\n"
-                 << "Material:\n"
-                 << "  AlbedoColor: [1.0, 1.0, 1.0, 1.0]\n"
-                 << "  Roughness: 0.35\n"
-                 << "  Metallic: 0.0\n"
-                 << "  EmissionColor: [0.0, 0.0, 0.0]\n"
-                 << "  EmissionIntensity: 0.0\n"
-                 << "  AlbedoTexture: \"\"\n"
-                 << "  NormalTexture: \"\"\n"
-                 << "  Tiling: 1.0\n";
-            fout.close();
-            OVERFLOW_INFO("Material criado: {0}", filePath.string());
-            EditorPreferences::OpenFileInIDE(filePath);
-        }
+        auto mat = Material::Create(std::filesystem::path(name).stem().string());
+        mat->Save(filePath.string());
+        OVERFLOW_INFO("Material criado: {0}", filePath.string());
     }
 
     void ContentBrowserPanel::CreateArchetypeFile(const std::string& name) {

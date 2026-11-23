@@ -76,6 +76,376 @@ namespace Overflow {
     void SceneHierarchyPanel::SetContext(const std::shared_ptr<Scene>& scene) {
         m_Context = scene;
         m_SelectionContext = {};
+        m_SelectedAsset.clear();
+    }
+
+    void SceneHierarchyPanel::SetSelectedEntity(Entity entity) {
+        m_SelectionContext = entity;
+        if (entity) {
+            m_SelectedAsset.clear();
+        }
+    }
+
+    void SceneHierarchyPanel::SetSelectedAsset(const std::filesystem::path& assetPath) {
+        m_SelectedAsset = assetPath;
+        m_SelectionContext = {};
+    }
+
+    void SceneHierarchyPanel::ClearSelection() {
+        m_SelectionContext = {};
+        m_SelectedAsset.clear();
+    }
+
+    void SceneHierarchyPanel::DrawAssetInspector(const std::filesystem::path& assetPath) {
+        if (!std::filesystem::exists(assetPath)) {
+            ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), "Asset nao encontrado: %s", assetPath.string().c_str());
+            return;
+        }
+
+        std::string filename = assetPath.filename().string();
+        std::string ext = assetPath.extension().string();
+        for (auto& c : ext) c = static_cast<char>(tolower(c));
+        uintmax_t fileSize = std::filesystem::file_size(assetPath);
+
+        // ---------------------------------------------------------------------
+        // 1. MATERIAL ASSET (.ovmat, .mat)
+        // ---------------------------------------------------------------------
+        if (ext == ".ovmat" || ext == ".mat") {
+            if (m_InspectedMaterialPath != assetPath.string() || !m_InspectedMaterial) {
+                m_InspectedMaterial = Material::Load(assetPath.string());
+                m_InspectedMaterialPath = assetPath.string();
+            }
+
+            if (!m_InspectedMaterial) {
+                ImGui::TextColored(ImVec4(0.95f, 0.40f, 0.40f, 1.0f), "Erro ao carregar o arquivo de material .ovmat!");
+                return;
+            }
+
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.20f, 0.35f, 0.30f, 0.9f));
+            if (ImGui::CollapsingHeader("[Material Asset] Propriedades PBR da Superficie", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.40f, 0.90f, 0.70f, 1.0f), "Material: %s", m_InspectedMaterial->Name.c_str());
+                ImGui::TextDisabled("Arquivo: %s", assetPath.string().c_str());
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Tipo de Shader do Material
+                const char* shaderTypes[] = { "Standard PBR (Cook-Torrance)", "Unlit (Flat/Color)", "Blinn-Phong (Specular)", "Wireframe" };
+                int currentType = static_cast<int>(m_InspectedMaterial->Type);
+                if (ImGui::Combo("Shader Type", &currentType, shaderTypes, IM_ARRAYSIZE(shaderTypes))) {
+                    m_InspectedMaterial->Type = static_cast<ShaderType>(currentType);
+                }
+                ImGui::Spacing();
+
+                // Albedo Color & Albedo Texture
+                ImGui::TextColored(ImVec4(0.95f, 0.85f, 0.45f, 1.0f), "Albedo & Superficie");
+                ImGui::ColorEdit4("Albedo Color", glm::value_ptr(m_InspectedMaterial->AlbedoColor));
+
+                std::string texLabel = m_InspectedMaterial->AlbedoTexturePath.empty() ? "[Arraste uma textura aqui]" : m_InspectedMaterial->AlbedoTexturePath;
+                ImGui::Button(texLabel.c_str(), ImVec2(-60.0f, 0.0f));
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
+                        std::string droppedPath = (const char*)payload->Data;
+                        std::string dExt = std::filesystem::path(droppedPath).extension().string();
+                        for (auto& c : dExt) c = static_cast<char>(tolower(c));
+                        if (dExt == ".png" || dExt == ".jpg" || dExt == ".jpeg" || dExt == ".bmp") {
+                            m_InspectedMaterial->AlbedoTexturePath = droppedPath;
+                            m_InspectedMaterial->AlbedoTexture = Texture2D::Create(droppedPath);
+                            OVERFLOW_INFO("Textura '{0}' vinculada ao material '{1}'!", droppedPath, m_InspectedMaterial->Name);
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("Clear##Albedo")) {
+                    m_InspectedMaterial->AlbedoTexturePath = "";
+                    m_InspectedMaterial->AlbedoTexture = nullptr;
+                }
+
+                ImGui::SliderFloat("Metallic", &m_InspectedMaterial->Metallic, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Roughness", &m_InspectedMaterial->Roughness, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("AO (Ambient Occlusion)", &m_InspectedMaterial->AO, 0.0f, 1.0f, "%.2f");
+                ImGui::DragFloat("Tiling", &m_InspectedMaterial->Tiling, 0.1f, 0.1f, 50.0f, "%.1fx");
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Normal Map
+                ImGui::TextColored(ImVec4(0.45f, 0.75f, 0.95f, 1.0f), "Relevo & Normal Map");
+                ImGui::Checkbox("Usar Normal Map", &m_InspectedMaterial->UseNormalMap);
+                if (m_InspectedMaterial->UseNormalMap) {
+                    std::string normLabel = m_InspectedMaterial->NormalMapPath.empty() ? "[Arraste o mapa de normais aqui]" : m_InspectedMaterial->NormalMapPath;
+                    ImGui::Button(normLabel.c_str(), ImVec2(-60.0f, 0.0f));
+                    if (ImGui::BeginDragDropTarget()) {
+                        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
+                            std::string droppedPath = (const char*)payload->Data;
+                            m_InspectedMaterial->NormalMapPath = droppedPath;
+                            m_InspectedMaterial->NormalMap = Texture2D::Create(droppedPath);
+                            OVERFLOW_INFO("Normal map '{0}' vinculado ao material!", droppedPath);
+                        }
+                        ImGui::EndDragDropTarget();
+                    }
+                    ImGui::SameLine();
+                    if (ImGui::Button("Clear##Norm")) {
+                        m_InspectedMaterial->NormalMapPath = "";
+                        m_InspectedMaterial->NormalMap = nullptr;
+                    }
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Emissao
+                ImGui::TextColored(ImVec4(0.95f, 0.50f, 0.30f, 1.0f), "Emissao de Luz (Glow)");
+                ImGui::ColorEdit3("Emission Color", glm::value_ptr(m_InspectedMaterial->EmissionColor));
+                ImGui::DragFloat("Emission Intensity", &m_InspectedMaterial->EmissionIntensity, 0.1f, 0.0f, 30.0f, "%.2f");
+
+                if (m_InspectedMaterial->Type == ShaderType::BlinnPhong) {
+                    ImGui::Spacing();
+                    ImGui::SliderFloat("Shininess", &m_InspectedMaterial->Shininess, 1.0f, 256.0f, "%.0f");
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Ações de Salvamento do Material
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 0.35f, 1.0f));
+                ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.25f, 0.75f, 0.45f, 1.0f));
+                if (ImGui::Button("Salvar Alteracoes no Material (.ovmat)", ImVec2(-1.0f, 32.0f))) {
+                    if (m_InspectedMaterial->Save(assetPath.string())) {
+                        OVERFLOW_INFO("Material '{0}' salvo com sucesso em '{1}'!", m_InspectedMaterial->Name, assetPath.string());
+                    }
+                }
+                ImGui::PopStyleColor(2);
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // 2. MODELO 3D (.obj, .fbx, .gltf, .dae)
+        // ---------------------------------------------------------------------
+        else if (ext == ".obj" || ext == ".fbx" || ext == ".gltf" || ext == ".dae") {
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.35f, 0.25f, 0.45f, 0.9f));
+            if (ImGui::CollapsingHeader("[3D Model Asset] Informacoes de Geometria", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.85f, 0.65f, 1.0f, 1.0f), "Modelo 3D: %s", filename.c_str());
+                ImGui::TextDisabled("Caminho: %s", assetPath.string().c_str());
+                ImGui::TextDisabled("Tamanho no Disco: %.2f KB", fileSize / 1024.0f);
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::Text("Formato suportado nativamente pelo carregador de malhas da engine.");
+                ImGui::Spacing();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.50f, 0.85f, 1.0f));
+                if (ImGui::Button("Instanciar Modelo na Cena Atual", ImVec2(-1.0f, 32.0f))) {
+                    if (m_Context) {
+                        std::string entityName = assetPath.stem().string();
+                        Entity newEntity = m_Context->CreateEntity(entityName);
+                        auto& mesh = newEntity.AddComponent<MeshComponent>(MeshGeometryType::CustomOBJ);
+                        mesh.ModelAsset = Model::Create(assetPath.string());
+                        mesh.Color = { 1.0f, 1.0f, 1.0f, 1.0f };
+                        SetSelectedEntity(newEntity);
+                        OVERFLOW_INFO("Modelo '{0}' instanciado na cena com sucesso!", assetPath.string());
+                    }
+                }
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // 3. SCRIPTS (.ovsc, .h, .cpp, .cs, .lua)
+        // ---------------------------------------------------------------------
+        else if (ext == ".h" || ext == ".cpp" || ext == ".cs" || ext == ".lua" || ext == ".ovsc") {
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.20f, 0.35f, 0.55f, 0.9f));
+            if (ImGui::CollapsingHeader("[Script Asset] Codigo Fonte & Comportamento", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.40f, 0.80f, 1.0f, 1.0f), "Script: %s", filename.c_str());
+                ImGui::TextDisabled("Caminho: %s", assetPath.string().c_str());
+                ImGui::TextDisabled("Tamanho: %llu bytes", fileSize);
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                // Botão de abrir na IDE configurada
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.25f, 0.65f, 1.0f));
+                if (ImGui::Button("Abrir no Editor Externo / IDE (Rider / VS)", ImVec2(-1.0f, 28.0f))) {
+                    EditorPreferences::OpenFileInIDE(assetPath);
+                }
+                ImGui::PopStyleColor();
+
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.85f, 0.85f, 0.85f, 1.0f), "Visualizacao Previa do Codigo:");
+
+                // Leitura e cache do arquivo
+                if (m_CachedFilePath != assetPath.string()) {
+                    std::ifstream fin(assetPath);
+                    if (fin.is_open()) {
+                        std::stringstream ss;
+                        ss << fin.rdbuf();
+                        m_CachedFileContent = ss.str();
+                        m_CachedFilePath = assetPath.string();
+                    } else {
+                        m_CachedFileContent = "// Nao foi possivel abrir o arquivo para leitura.";
+                    }
+                }
+
+                ImGui::BeginChild("ScriptCodePreview", ImVec2(0.0f, 320.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.85f, 0.90f, 0.85f, 1.0f));
+                ImGui::TextUnformatted(m_CachedFileContent.c_str());
+                ImGui::PopStyleColor();
+                ImGui::EndChild();
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // 4. SHADERS (.glsl, .vert, .frag)
+        // ---------------------------------------------------------------------
+        else if (ext == ".glsl" || ext == ".vert" || ext == ".frag") {
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.45f, 0.35f, 0.15f, 0.9f));
+            if (ImGui::CollapsingHeader("[Shader GLSL Asset] Codigo de Shader", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(1.0f, 0.85f, 0.35f, 1.0f), "Shader: %s", filename.c_str());
+                ImGui::TextDisabled("Caminho: %s", assetPath.string().c_str());
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.35f, 0.15f, 1.0f));
+                if (ImGui::Button("Editar Shader na IDE Externa", ImVec2(-1.0f, 28.0f))) {
+                    EditorPreferences::OpenFileInIDE(assetPath);
+                }
+                ImGui::PopStyleColor();
+
+                if (m_CachedFilePath != assetPath.string()) {
+                    std::ifstream fin(assetPath);
+                    if (fin.is_open()) {
+                        std::stringstream ss;
+                        ss << fin.rdbuf();
+                        m_CachedFileContent = ss.str();
+                        m_CachedFilePath = assetPath.string();
+                    }
+                }
+
+                ImGui::BeginChild("ShaderCodePreview", ImVec2(0.0f, 320.0f), true, ImGuiWindowFlags_HorizontalScrollbar);
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.95f, 0.90f, 0.70f, 1.0f));
+                ImGui::TextUnformatted(m_CachedFileContent.c_str());
+                ImGui::PopStyleColor();
+                ImGui::EndChild();
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // 5. TEXTURAS (.png, .jpg, .jpeg, .bmp, .tga)
+        // ---------------------------------------------------------------------
+        else if (ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp" || ext == ".tga") {
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.20f, 0.40f, 0.45f, 0.9f));
+            if (ImGui::CollapsingHeader("[Texture 2D Asset] Pre-visualizacao de Imagem", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.40f, 0.90f, 0.95f, 1.0f), "Textura: %s", filename.c_str());
+                ImGui::TextDisabled("Tamanho no Disco: %.2f KB", fileSize / 1024.0f);
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (m_InspectedTexturePath != assetPath.string()) {
+                    m_InspectedTexture = Texture2D::Create(assetPath.string());
+                    m_InspectedTexturePath = assetPath.string();
+                }
+
+                if (m_InspectedTexture && m_InspectedTexture->IsLoaded()) {
+                    ImGui::Text("Dimensoes: %u x %u px", m_InspectedTexture->GetWidth(), m_InspectedTexture->GetHeight());
+                    ImGui::Spacing();
+                    float aspect = (float)m_InspectedTexture->GetHeight() / (float)m_InspectedTexture->GetWidth();
+                    float w = 220.0f;
+                    float h = w * aspect;
+                    ImGui::Image((ImTextureID)(uint64_t)m_InspectedTexture->GetRendererID(), ImVec2(w, h), ImVec2(0, 1), ImVec2(1, 0));
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.25f, 0.55f, 0.65f, 1.0f));
+                if (ImGui::Button("Criar Material a partir desta Textura", ImVec2(-1.0f, 30.0f))) {
+                    std::string matName = assetPath.stem().string() + "_Mat";
+                    std::string matPath = "assets/materials/" + matName + ".ovmat";
+                    auto newMat = Material::Create(matName);
+                    newMat->AlbedoTexturePath = assetPath.string();
+                    newMat->AlbedoTexture = m_InspectedTexture;
+                    newMat->Save(matPath);
+                    OVERFLOW_INFO("Material criado: '{0}'!", matPath);
+                }
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // 6. AUDIO (.wav, .mp3, .ogg)
+        // ---------------------------------------------------------------------
+        else if (ext == ".wav" || ext == ".mp3" || ext == ".ogg") {
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.25f, 0.45f, 0.30f, 0.9f));
+            if (ImGui::CollapsingHeader("[Audio Clip Asset] Som e Efeito Sonoro", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.50f, 0.95f, 0.55f, 1.0f), "Clip de Audio: %s", filename.c_str());
+                ImGui::TextDisabled("Caminho: %s", assetPath.string().c_str());
+                ImGui::TextDisabled("Tamanho no Disco: %.2f KB", fileSize / 1024.0f);
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.60f, 0.35f, 1.0f));
+                if (ImGui::Button("Tocar Pre-visualizacao (Play)", ImVec2(160.0f, 30.0f))) {
+                    AudioEngine::PlayCollisionSound(1.0f);
+                }
+                ImGui::PopStyleColor();
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::Button("Adicionar Emissor de Audio na Cena", ImVec2(-1.0f, 28.0f))) {
+                    if (m_Context) {
+                        Entity audioEntity = m_Context->CreateEntity(assetPath.stem().string() + "_Audio");
+                        auto& as = audioEntity.AddComponent<AudioSourceComponent>();
+                        as.ClipPath = assetPath.string();
+                        as.ClipName = assetPath.stem().string();
+                        SetSelectedEntity(audioEntity);
+                    }
+                }
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // 7. CENA (.ovscene, .scene)
+        // ---------------------------------------------------------------------
+        else if (ext == ".ovscene" || ext == ".scene") {
+            ImGui::PushStyleColor(ImGuiCol_Header, ImVec4(0.45f, 0.25f, 0.20f, 0.9f));
+            if (ImGui::CollapsingHeader("[Scene Asset] Arquivo de Cena", ImGuiTreeNodeFlags_DefaultOpen)) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.65f, 0.45f, 1.0f), "Cena: %s", filename.c_str());
+                ImGui::TextDisabled("Caminho: %s", assetPath.string().c_str());
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.85f, 0.45f, 0.20f, 1.0f));
+                if (ImGui::Button("Carregar esta Cena no Editor", ImVec2(-1.0f, 32.0f))) {
+                    if (m_Context) {
+                        SceneSerializer serializer(m_Context);
+                        serializer.Deserialize(assetPath.string());
+                        OVERFLOW_INFO("Cena '{0}' carregada!", assetPath.string());
+                    }
+                }
+                ImGui::PopStyleColor();
+            }
+            ImGui::PopStyleColor();
+        }
+        // ---------------------------------------------------------------------
+        // OUTROS ARQUIVOS / DADOS GERAIS
+        // ---------------------------------------------------------------------
+        else {
+            ImGui::TextColored(ImVec4(0.70f, 0.70f, 0.75f, 1.0f), "[Arquivo Generico] %s", filename.c_str());
+            ImGui::TextDisabled("Extensao: %s", ext.c_str());
+            ImGui::TextDisabled("Tamanho: %llu bytes", fileSize);
+        }
     }
 
     void SceneHierarchyPanel::OnImGuiRender() {
@@ -85,105 +455,11 @@ namespace Overflow {
         ImGui::Begin("World Outliner");
         m_HierarchyFocused = ImGui::IsWindowFocused();
 
-        // Barra Superior: Busca + Botão [+ Add]
+        // Barra Superior: Busca de Entidades (Sem botão + Add, criação via Botão Direito ou Menu GameObject)
         static char s_SearchFilter[128] = "";
         float availWidth = ImGui::GetContentRegionAvail().x;
-        ImGui::SetNextItemWidth(availWidth - 75.0f);
+        ImGui::SetNextItemWidth(availWidth);
         ImGui::InputTextWithHint("##HierarchySearch", "Search Entities...", s_SearchFilter, sizeof(s_SearchFilter));
-
-        ImGui::SameLine();
-        if (ImGui::Button("+ Add", ImVec2(68.0f, 0.0f))) {
-            ImGui::OpenPopup("HierarchyAddPopup");
-        }
-
-        if (ImGui::BeginPopup("HierarchyAddPopup")) {
-            if (ImGui::MenuItem("Empty Entity")) {
-                auto created = m_Context->CreateEntity("Empty Entity");
-                m_SelectionContext = created;
-            }
-            ImGui::Separator();
-            if (ImGui::BeginMenu("3D Object")) {
-                if (ImGui::MenuItem("Cube")) {
-                    auto created = m_Context->CreateCube("Cube");
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Sphere")) {
-                    auto created = m_Context->CreateSphere("Sphere");
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Plane")) {
-                    auto created = m_Context->CreatePlane("Plane");
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Torus (.obj)")) {
-                    auto created = m_Context->CreateEntity("Torus");
-                    auto& mc = created.AddComponent<MeshComponent>(MeshGeometryType::Torus);
-                    mc.ModelAsset = m_Context->GetSharedTorus();
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Procedural Terrain")) {
-                    auto created = m_Context->CreateTerrain("Procedural Terrain", 40, 24.0f, 2.5f);
-                    m_SelectionContext = created;
-                }
-                ImGui::EndMenu();
-            }
-
-            if (ImGui::BeginMenu("Light")) {
-                if (ImGui::MenuItem("Directional Light")) {
-                    auto created = m_Context->CreateDirectionalLight("Directional Light");
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Point Light")) {
-                    auto created = m_Context->CreateEntity("Point Light");
-                    created.GetComponent<TransformComponent>().Translation = { 0.0f, 2.0f, 0.0f };
-                    auto& lc = created.AddComponent<LightComponent>();
-                    lc.Type = LightType::Point;
-                    lc.Color = { 1.0f, 0.85f, 0.6f };
-                    lc.Intensity = 3.0f;
-                    lc.Range = 12.0f;
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Spot Light")) {
-                    auto created = m_Context->CreateEntity("Spot Light");
-                    created.GetComponent<TransformComponent>().Translation = { 0.0f, 4.0f, 0.0f };
-                    created.GetComponent<TransformComponent>().Rotation = { 45.0f, 0.0f, 0.0f };
-                    auto& lc = created.AddComponent<LightComponent>();
-                    lc.Type = LightType::Spot;
-                    lc.Color = { 0.8f, 0.9f, 1.0f };
-                    lc.Intensity = 5.0f;
-                    lc.Range = 20.0f;
-                    lc.InnerAngle = 18.0f;
-                    lc.OuterAngle = 32.0f;
-                    m_SelectionContext = created;
-                }
-                ImGui::EndMenu();
-            }
-
-            if (ImGui::BeginMenu("Effects")) {
-                if (ImGui::MenuItem("Particle System")) {
-                    auto created = m_Context->CreateEntity("Particle System");
-                    created.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 0.0f };
-                    created.AddComponent<ParticleSystemComponent>();
-                    m_SelectionContext = created;
-                }
-                ImGui::EndMenu();
-            }
-
-            if (ImGui::BeginMenu("Audio")) {
-                if (ImGui::MenuItem("Audio Source")) {
-                    auto created = m_Context->CreateEntity("Audio Source");
-                    created.AddComponent<AudioSourceComponent>();
-                    m_SelectionContext = created;
-                }
-                if (ImGui::MenuItem("Audio Listener")) {
-                    auto created = m_Context->CreateEntity("Audio Listener");
-                    created.AddComponent<AudioListenerComponent>();
-                    m_SelectionContext = created;
-                }
-                ImGui::EndMenu();
-            }
-            ImGui::EndPopup();
-        }
 
         ImGui::Separator();
 
@@ -226,6 +502,99 @@ namespace Overflow {
                     auto created = m_Context->CreateEntity("Empty Entity");
                     m_SelectionContext = created;
                 }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Main Camera")) {
+                    auto created = m_Context->CreateCamera("Main Camera", { 0.0f, 2.0f, 8.0f });
+                    m_SelectionContext = created;
+                }
+                if (ImGui::BeginMenu("Camera")) {
+                    if (ImGui::MenuItem("Main Camera")) {
+                        auto created = m_Context->CreateCamera("Main Camera", { 0.0f, 2.0f, 8.0f });
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Camera")) {
+                        auto created = m_Context->CreateCamera("Camera", { 0.0f, 2.0f, 8.0f });
+                        m_SelectionContext = created;
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("3D Object")) {
+                    if (ImGui::MenuItem("Cube")) {
+                        auto created = m_Context->CreateCube("Cube");
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Sphere")) {
+                        auto created = m_Context->CreateSphere("Sphere");
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Plane")) {
+                        auto created = m_Context->CreatePlane("Plane");
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Torus (.obj)")) {
+                        auto created = m_Context->CreateEntity("Torus");
+                        auto& mc = created.AddComponent<MeshComponent>(MeshGeometryType::Torus);
+                        mc.ModelAsset = m_Context->GetSharedTorus();
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Procedural Terrain")) {
+                        auto created = m_Context->CreateTerrain("Procedural Terrain", 40, 24.0f, 2.5f);
+                        m_SelectionContext = created;
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Light")) {
+                    if (ImGui::MenuItem("Directional Light")) {
+                        auto created = m_Context->CreateDirectionalLight("Directional Light");
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Point Light")) {
+                        auto created = m_Context->CreateEntity("Point Light");
+                        created.GetComponent<TransformComponent>().Translation = { 0.0f, 2.0f, 0.0f };
+                        auto& lc = created.AddComponent<LightComponent>();
+                        lc.Type = LightType::Point;
+                        lc.Color = { 1.0f, 0.85f, 0.6f };
+                        lc.Intensity = 3.0f;
+                        lc.Range = 12.0f;
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Spot Light")) {
+                        auto created = m_Context->CreateEntity("Spot Light");
+                        created.GetComponent<TransformComponent>().Translation = { 0.0f, 4.0f, 0.0f };
+                        created.GetComponent<TransformComponent>().Rotation = { 45.0f, 0.0f, 0.0f };
+                        auto& lc = created.AddComponent<LightComponent>();
+                        lc.Type = LightType::Spot;
+                        lc.Color = { 0.8f, 0.9f, 1.0f };
+                        lc.Intensity = 5.0f;
+                        lc.Range = 20.0f;
+                        lc.InnerAngle = 18.0f;
+                        lc.OuterAngle = 32.0f;
+                        m_SelectionContext = created;
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Effects")) {
+                    if (ImGui::MenuItem("Particle System")) {
+                        auto created = m_Context->CreateEntity("Particle System");
+                        created.GetComponent<TransformComponent>().Translation = { 0.0f, 1.0f, 0.0f };
+                        created.AddComponent<ParticleSystemComponent>();
+                        m_SelectionContext = created;
+                    }
+                    ImGui::EndMenu();
+                }
+                if (ImGui::BeginMenu("Audio")) {
+                    if (ImGui::MenuItem("Audio Source")) {
+                        auto created = m_Context->CreateEntity("Audio Source");
+                        created.AddComponent<AudioSourceComponent>();
+                        m_SelectionContext = created;
+                    }
+                    if (ImGui::MenuItem("Audio Listener")) {
+                        auto created = m_Context->CreateEntity("Audio Listener");
+                        created.AddComponent<AudioListenerComponent>();
+                        m_SelectionContext = created;
+                    }
+                    ImGui::EndMenu();
+                }
                 ImGui::EndPopup();
             }
 
@@ -235,14 +604,14 @@ namespace Overflow {
         ImGui::End();
 
         // ---------------------------------------------------------------------
-        // Painel: Entity Details (Propriedades & Componentes)
+        // Painel: Inspector (Propriedades, Componentes & Assets)
         // ---------------------------------------------------------------------
-        ImGui::Begin("Entity Details");
+        ImGui::Begin("Inspector");
 
         if (m_SelectionContext) {
             DrawComponents(m_SelectionContext);
 
-            // Drag & Drop direto no Painel de Detalhes (Anexa Scripts, Materiais, Texturas)
+            // Drag & Drop direto no Inspector (Anexa Scripts, Materiais, Texturas)
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
                     std::string pathStr = (const char*)payload->Data;
@@ -256,19 +625,30 @@ namespace Overflow {
                             m_SelectionContext.AddComponent<NativeScriptComponent>();
                         }
                         m_SelectionContext.GetComponent<NativeScriptComponent>().BindByName(scriptName);
-                        OVERFLOW_INFO("Script '{0}' anexado a entidade '{1}' via Entity Details!", scriptName, m_SelectionContext.GetComponent<TagComponent>().Tag);
+                        OVERFLOW_INFO("Script '{0}' anexado a entidade '{1}' via Inspector!", scriptName, m_SelectionContext.GetComponent<TagComponent>().Tag);
                     } else if (ext == ".png" || ext == ".jpg" || ext == ".bmp") {
                         if (m_SelectionContext.HasComponent<MeshComponent>()) {
                             m_SelectionContext.GetComponent<MeshComponent>().TextureAsset = Texture2D::Create(path.string());
                             OVERFLOW_INFO("Textura aplicada a entidade '{0}'!", m_SelectionContext.GetComponent<TagComponent>().Tag);
                         }
+                    } else if (ext == ".ovmat" || ext == ".mat") {
+                        if (m_SelectionContext.HasComponent<MeshComponent>()) {
+                            m_SelectionContext.GetComponent<MeshComponent>().MaterialAsset = Material::Load(path.string());
+                            OVERFLOW_INFO("Material '{0}' aplicado a entidade '{1}'!", path.string(), m_SelectionContext.GetComponent<TagComponent>().Tag);
+                        }
                     }
                 }
                 ImGui::EndDragDropTarget();
             }
+        } else if (!m_SelectedAsset.empty()) {
+            DrawAssetInspector(m_SelectedAsset);
         } else {
             ImGui::Spacing();
-            ImGui::TextDisabled("Select an entity from the Scene or Outliner to inspect its components.");
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(0.55f, 0.60f, 0.68f, 1.0f));
+            ImGui::Text("Nenhum objeto ou asset selecionado.");
+            ImGui::Spacing();
+            ImGui::TextWrapped("Selecione um GameObject no World Outliner ou clique em um asset no Content Browser (Material, Script, Modelo 3D, Textura, Audio) para visualizar e editar suas configuracoes no Inspector.");
+            ImGui::PopStyleColor();
         }
 
         ImGui::End();
@@ -575,14 +955,81 @@ namespace Overflow {
                 }
 
                 ImGui::Spacing();
-                ImGui::TextColored(ImVec4(0.35f, 0.65f, 0.95f, 1.0f), "Surface Material");
+                ImGui::TextColored(ImVec4(0.40f, 0.90f, 0.70f, 1.0f), "Material Asset (.ovmat)");
 
-                // Base Color
+                std::string matLabel = mesh.MaterialAsset ? mesh.MaterialAsset->Name : "Default Material (Embedded)";
+                if (!mesh.MaterialPath.empty()) {
+                    matLabel += " (" + std::filesystem::path(mesh.MaterialPath).filename().string() + ")";
+                }
+
+                ImGui::Columns(2, nullptr, false);
+                ImGui::SetColumnWidth(0, 85.0f);
+                ImGui::Text("Material");
+                ImGui::NextColumn();
+
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.14f, 0.20f, 0.18f, 1.0f));
+                ImGui::Button(matLabel.c_str(), ImVec2(ImGui::GetContentRegionAvail().x - 70.0f, 24.0f));
+                ImGui::PopStyleColor();
+
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
+                        std::string pathStr = (const char*)payload->Data;
+                        if (pathStr.ends_with(".ovmat")) {
+                            mesh.MaterialPath = pathStr;
+                            mesh.MaterialAsset = Material::Load(pathStr);
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+
+                ImGui::SameLine();
+                if (ImGui::Button("New", ImVec2(40.0f, 24.0f))) {
+                    std::string newPath = "assets/materials/" + entity.GetComponent<TagComponent>().Tag + "_Mat.ovmat";
+                    auto newMat = Material::Create(entity.GetComponent<TagComponent>().Tag + "_Mat");
+                    newMat->AlbedoColor = mesh.Color;
+                    newMat->Metallic = mesh.Metallic;
+                    newMat->Roughness = mesh.Roughness;
+                    newMat->Save(newPath);
+                    mesh.MaterialPath = newPath;
+                    mesh.MaterialAsset = newMat;
+                }
+                ImGui::SameLine();
+                if (ImGui::Button("X", ImVec2(24.0f, 24.0f))) {
+                    mesh.MaterialAsset = nullptr;
+                    mesh.MaterialPath = "";
+                }
+                ImGui::Columns(1);
+
+                // Seletor de Shader (Standard PBR, Unlit, Blinn-Phong, Wireframe)
+                const char* shaderNames[] = { "Standard PBR", "Unlit", "Blinn-Phong", "Wireframe" };
+                int currentShader = mesh.MaterialAsset ? static_cast<int>(mesh.MaterialAsset->Type) : 0;
+                ImGui::Columns(2, nullptr, false);
+                ImGui::SetColumnWidth(0, 85.0f);
+                ImGui::Text("Shader");
+                ImGui::NextColumn();
+                if (ImGui::Combo("##MaterialShader", &currentShader, shaderNames, IM_ARRAYSIZE(shaderNames))) {
+                    if (mesh.MaterialAsset) {
+                        mesh.MaterialAsset->Type = static_cast<ShaderType>(currentShader);
+                        mesh.MaterialAsset->Save();
+                    }
+                }
+                ImGui::Columns(1);
+
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.35f, 0.65f, 0.95f, 1.0f), "Surface Parameters");
+
+                // Base Color / Albedo
+                glm::vec4* colorPtr = mesh.MaterialAsset ? &mesh.MaterialAsset->AlbedoColor : &mesh.Color;
                 ImGui::Columns(2, nullptr, false);
                 ImGui::SetColumnWidth(0, 85.0f);
                 ImGui::Text("Albedo");
                 ImGui::NextColumn();
-                ImGui::ColorEdit4("##BaseColor", glm::value_ptr(mesh.Color), ImGuiColorEditFlags_NoInputs);
+                if (ImGui::ColorEdit4("##BaseColor", glm::value_ptr(*colorPtr), ImGuiColorEditFlags_NoInputs)) {
+                    if (mesh.MaterialAsset) {
+                        mesh.Color = mesh.MaterialAsset->AlbedoColor;
+                        mesh.MaterialAsset->Save();
+                    }
+                }
                 ImGui::Columns(1);
 
                 // Texture Slot estilo Unity
@@ -591,7 +1038,8 @@ namespace Overflow {
                 ImGui::Text("Texture");
                 ImGui::NextColumn();
 
-                std::string texLabel = mesh.TextureAsset ? mesh.TextureAsset->GetPath() : "None (Drag Texture Here)";
+                auto currentTex = mesh.MaterialAsset ? mesh.MaterialAsset->AlbedoTexture : mesh.TextureAsset;
+                std::string texLabel = currentTex ? currentTex->GetPath() : "None (Drag Texture Here)";
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.13f, 0.15f, 1.0f));
                 ImGui::Button(texLabel.c_str(), ImVec2(ImGui::GetContentRegionAvail().x - 70.0f, 24.0f));
                 ImGui::PopStyleColor();
@@ -599,42 +1047,75 @@ namespace Overflow {
                 if (ImGui::BeginDragDropTarget()) {
                     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
                         std::string pathStr = (const char*)payload->Data;
-                        mesh.TextureAsset = Texture2D::Create(pathStr);
+                        auto newTex = Texture2D::Create(pathStr);
+                        if (mesh.MaterialAsset) {
+                            mesh.MaterialAsset->AlbedoTexture = newTex;
+                            mesh.MaterialAsset->AlbedoTexturePath = pathStr;
+                            mesh.MaterialAsset->Save();
+                        } else {
+                            mesh.TextureAsset = newTex;
+                        }
                     }
                     ImGui::EndDragDropTarget();
                 }
 
                 ImGui::SameLine();
                 if (ImGui::Button("Demo", ImVec2(40.0f, 24.0f))) {
-                    mesh.TextureAsset = Texture2D::Create("assets/textures/uv_checker.bmp");
+                    auto demoTex = Texture2D::Create("assets/textures/uv_checker.bmp");
+                    if (mesh.MaterialAsset) {
+                        mesh.MaterialAsset->AlbedoTexture = demoTex;
+                        mesh.MaterialAsset->AlbedoTexturePath = "assets/textures/uv_checker.bmp";
+                        mesh.MaterialAsset->Save();
+                    } else {
+                        mesh.TextureAsset = demoTex;
+                    }
                 }
                 ImGui::SameLine();
-                if (ImGui::Button("X", ImVec2(24.0f, 24.0f))) {
-                    mesh.TextureAsset = nullptr;
+                if (ImGui::Button("X##Tex", ImVec2(24.0f, 24.0f))) {
+                    if (mesh.MaterialAsset) {
+                        mesh.MaterialAsset->AlbedoTexture = nullptr;
+                        mesh.MaterialAsset->AlbedoTexturePath = "";
+                        mesh.MaterialAsset->Save();
+                    } else {
+                        mesh.TextureAsset = nullptr;
+                    }
                 }
                 ImGui::Columns(1);
 
                 // PBR Sliders
+                float* metalPtr = mesh.MaterialAsset ? &mesh.MaterialAsset->Metallic : &mesh.Metallic;
+                float* roughPtr = mesh.MaterialAsset ? &mesh.MaterialAsset->Roughness : &mesh.Roughness;
+                float* aoPtr = mesh.MaterialAsset ? &mesh.MaterialAsset->AO : &mesh.AO;
+                float* tilePtr = mesh.MaterialAsset ? &mesh.MaterialAsset->Tiling : &mesh.Tiling;
+
                 ImGui::Columns(2, nullptr, false);
                 ImGui::SetColumnWidth(0, 85.0f);
                 ImGui::Text("Metallic");
                 ImGui::NextColumn();
-                ImGui::SliderFloat("##Metallic", &mesh.Metallic, 0.0f, 1.0f, "%.2f");
+                if (ImGui::SliderFloat("##Metallic", metalPtr, 0.0f, 1.0f, "%.2f")) {
+                    if (mesh.MaterialAsset) mesh.MaterialAsset->Save();
+                }
                 ImGui::NextColumn();
 
                 ImGui::Text("Roughness");
                 ImGui::NextColumn();
-                ImGui::SliderFloat("##Roughness", &mesh.Roughness, 0.01f, 1.0f, "%.2f");
+                if (ImGui::SliderFloat("##Roughness", roughPtr, 0.01f, 1.0f, "%.2f")) {
+                    if (mesh.MaterialAsset) mesh.MaterialAsset->Save();
+                }
                 ImGui::NextColumn();
 
                 ImGui::Text("AO");
                 ImGui::NextColumn();
-                ImGui::SliderFloat("##AO", &mesh.AO, 0.0f, 1.0f, "%.2f");
+                if (ImGui::SliderFloat("##AO", aoPtr, 0.0f, 1.0f, "%.2f")) {
+                    if (mesh.MaterialAsset) mesh.MaterialAsset->Save();
+                }
                 ImGui::NextColumn();
 
                 ImGui::Text("Tiling");
                 ImGui::NextColumn();
-                ImGui::DragFloat("##Tiling", &mesh.Tiling, 0.1f, 0.1f, 20.0f, "%.1f");
+                if (ImGui::DragFloat("##Tiling", tilePtr, 0.1f, 0.1f, 20.0f, "%.1f")) {
+                    if (mesh.MaterialAsset) mesh.MaterialAsset->Save();
+                }
                 ImGui::Columns(1);
 
                 // Slot de Normal Map (Relevo PBR 3D)
@@ -643,7 +1124,8 @@ namespace Overflow {
                 ImGui::Text("Normal Map");
                 ImGui::NextColumn();
 
-                std::string normLabel = mesh.NormalMapAsset ? mesh.NormalMapAsset->GetPath() : "None (Drag Normal Map)";
+                auto currentNorm = mesh.MaterialAsset ? mesh.MaterialAsset->NormalMap : mesh.NormalMapAsset;
+                std::string normLabel = currentNorm ? currentNorm->GetPath() : "None (Drag Normal Map)";
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.12f, 0.13f, 0.15f, 1.0f));
                 ImGui::Button(normLabel.c_str(), ImVec2(ImGui::GetContentRegionAvail().x - 70.0f, 24.0f));
                 ImGui::PopStyleColor();
@@ -651,24 +1133,38 @@ namespace Overflow {
                 if (ImGui::BeginDragDropTarget()) {
                     if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
                         std::string pathStr = (const char*)payload->Data;
-                        mesh.NormalMapAsset = Texture2D::Create(pathStr);
-                        mesh.UseNormalMap = true;
+                        auto newNorm = Texture2D::Create(pathStr);
+                        if (mesh.MaterialAsset) {
+                            mesh.MaterialAsset->NormalMap = newNorm;
+                            mesh.MaterialAsset->NormalMapPath = pathStr;
+                            mesh.MaterialAsset->UseNormalMap = true;
+                            mesh.MaterialAsset->Save();
+                        } else {
+                            mesh.NormalMapAsset = newNorm;
+                            mesh.UseNormalMap = true;
+                        }
                     }
                     ImGui::EndDragDropTarget();
                 }
 
                 ImGui::SameLine();
-                if (ImGui::Button("Demo##Norm", ImVec2(40.0f, 24.0f))) {
-                    mesh.NormalMapAsset = Texture2D::Create("assets/textures/uv_checker.bmp");
-                    mesh.UseNormalMap = true;
-                }
-                ImGui::SameLine();
                 if (ImGui::Button("X##Norm", ImVec2(24.0f, 24.0f))) {
-                    mesh.NormalMapAsset = nullptr;
-                    mesh.UseNormalMap = false;
+                    if (mesh.MaterialAsset) {
+                        mesh.MaterialAsset->NormalMap = nullptr;
+                        mesh.MaterialAsset->NormalMapPath = "";
+                        mesh.MaterialAsset->UseNormalMap = false;
+                        mesh.MaterialAsset->Save();
+                    } else {
+                        mesh.NormalMapAsset = nullptr;
+                        mesh.UseNormalMap = false;
+                    }
                 }
                 ImGui::Columns(1);
-                ImGui::Checkbox("Enable Normal Mapping", &mesh.UseNormalMap);
+
+                bool* useNormPtr = mesh.MaterialAsset ? &mesh.MaterialAsset->UseNormalMap : &mesh.UseNormalMap;
+                if (ImGui::Checkbox("Enable Normal Mapping", useNormPtr)) {
+                    if (mesh.MaterialAsset) mesh.MaterialAsset->Save();
+                }
 
                 // Efeito Emissivo (Neon / Glow Bloom)
                 ImGui::Columns(2, nullptr, false);
@@ -762,6 +1258,44 @@ namespace Overflow {
                     ImGui::NextColumn();
                     ImGui::SliderFloat("##ShadowBias", &light.Bias, 0.0005f, 0.02f, "%.4f");
                     ImGui::Columns(1);
+                }
+
+                if (light.Type == LightType::Directional && m_Context) {
+                    ImGui::Spacing();
+                    ImGui::Separator();
+                    ImGui::Spacing();
+                    ImGui::TextColored(ImVec4(0.40f, 0.85f, 1.0f, 1.0f), "Nuvens Volumetricas 3D & Atmosfera");
+
+                    bool enableClouds = m_Context->GetVolumetricCloudsEnabled();
+                    if (ImGui::Checkbox("Habilitar Nuvens Volumetricas 3D", &enableClouds)) {
+                        m_Context->SetVolumetricCloudsEnabled(enableClouds);
+                    }
+
+                    if (enableClouds) {
+                        float dens = m_Context->GetCloudDensityMultiplier();
+                        if (ImGui::SliderFloat("Densidade das Nuvens", &dens, 0.0f, 4.0f, "%.2fx")) {
+                            m_Context->SetCloudDensityMultiplier(dens);
+                        }
+
+                        float cov = m_Context->GetCloudCoverage();
+                        if (ImGui::SliderFloat("Cobertura do Ceu (Coverage)", &cov, 0.0f, 1.0f, "%.2f")) {
+                            m_Context->SetCloudCoverage(cov);
+                        }
+
+                        float baseAlt = m_Context->GetCloudBaseAltitude();
+                        float topAlt = m_Context->GetCloudTopAltitude();
+                        bool altChanged = false;
+                        if (ImGui::DragFloat("Altitude Base", &baseAlt, 1.0f, 10.0f, 300.0f, "%.0f m")) altChanged = true;
+                        if (ImGui::DragFloat("Altitude Topo", &topAlt, 1.0f, baseAlt + 10.0f, 800.0f, "%.0f m")) altChanged = true;
+                        if (altChanged) {
+                            m_Context->SetCloudAltitudes(baseAlt, topAlt);
+                        }
+
+                        float wind = m_Context->GetWindSpeed();
+                        if (ImGui::SliderFloat("Velocidade do Vento", &wind, 0.0f, 20.0f, "%.1f m/s")) {
+                            m_Context->SetWindSpeed(wind);
+                        }
+                    }
                 }
 
                 ImGui::Spacing();

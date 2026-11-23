@@ -66,6 +66,10 @@ void EditorLayer::OnAttach() {
         }
     });
 
+    m_ContentBrowserPanel.SetAssetSelectedCallback([this](const std::filesystem::path& path) {
+        m_SceneHierarchyPanel.SetSelectedAsset(path);
+    });
+
     m_Camera.SetPosition({ 0.0f, 3.5f, 7.5f });
     m_Camera.SetRotation(-22.0f, -90.0f);
 
@@ -165,101 +169,18 @@ void EditorLayer::OnAttach() {
 void EditorLayer::CreateDefaultScene() {
     m_ActiveScene->Clear();
 
-    // 1. Sol / Luz Direcional com Sombras Ativas
-    auto sun = m_ActiveScene->CreateDirectionalLight("Sun (Directional Light)", { 0.6f, 1.0f, 0.4f });
+    // 1. Luz Direcional Principal (Directional Light / Sol)
+    auto sun = m_ActiveScene->CreateDirectionalLight("Directional Light", { 0.6f, 1.0f, 0.4f });
     auto& sunLight = sun.GetComponent<Overflow::LightComponent>();
-    sunLight.Intensity = 2.5f;
-    sunLight.AmbientIntensity = 0.15f;
+    sunLight.Intensity = 2.0f;
+    sunLight.AmbientIntensity = 0.2f;
     sunLight.CastShadows = true;
     sunLight.Bias = 0.003f;
 
-    // 2. Chão com Textura Quadriculada e Difusão PBR + Física Estática
-    auto ground = m_ActiveScene->CreatePlane("Ground Plane", { 0.0f, -0.5f, 0.0f });
-    auto& groundMesh = ground.GetComponent<Overflow::MeshComponent>();
-    groundMesh.TextureAsset = Overflow::Texture2D::Create("assets/textures/uv_checker.bmp");
-    groundMesh.Tiling = 8.0f;
-    groundMesh.Color = { 0.85f, 0.85f, 0.90f, 1.0f };
-    groundMesh.Roughness = 0.85f;
-    groundMesh.Metallic = 0.0f;
-    auto& groundRB = ground.AddComponent<Overflow::RigidbodyComponent>();
-    groundRB.Type = Overflow::BodyType::Static;
-    auto& groundCol = ground.AddComponent<Overflow::ColliderComponent>(Overflow::ColliderType::Box);
-    groundCol.Size = { 12.0f, 0.2f, 12.0f };
+    // 2. Câmera Principal da Cena (Main Camera)
+    auto mainCam = m_ActiveScene->CreateCamera("Main Camera", { 0.0f, 2.0f, 8.0f });
 
-    // 3. Cubo Principal (Dielétrico Vermelho) + Física Dinâmica
-    auto cube = m_ActiveScene->CreateCube("Red Cube", { -2.5f, 3.0f, 0.0f });
-    auto& cubeMesh = cube.GetComponent<Overflow::MeshComponent>();
-    cubeMesh.Color = { 0.95f, 0.25f, 0.20f, 1.0f };
-    cubeMesh.Roughness = 0.35f;
-    cubeMesh.Metallic = 0.05f;
-    auto& cubeRB = cube.AddComponent<Overflow::RigidbodyComponent>();
-    cubeRB.Mass = 1.5f;
-    auto& cubeCol = cube.AddComponent<Overflow::ColliderComponent>(Overflow::ColliderType::Box);
-    cubeCol.Bounciness = 0.4f;
-
-    // 4. Esfera Central Cromada/Metálica (Reflexos Cook-Torrance GGX) + Física Dinâmica
-    auto sphere = m_ActiveScene->CreateSphere("Metallic Sphere", { 0.0f, 4.5f, 0.0f });
-    auto& sphereMesh = sphere.GetComponent<Overflow::MeshComponent>();
-    sphereMesh.TextureAsset = Overflow::Texture2D::Create("assets/textures/uv_checker.bmp");
-    sphereMesh.Color = { 1.0f, 1.0f, 1.0f, 1.0f };
-    sphereMesh.Roughness = 0.12f;
-    sphereMesh.Metallic = 0.95f;
-    auto& sphereRB = sphere.AddComponent<Overflow::RigidbodyComponent>();
-    sphereRB.Mass = 2.0f;
-    auto& sphereCol = sphere.AddComponent<Overflow::ColliderComponent>(Overflow::ColliderType::Sphere);
-    sphereCol.Radius = 0.5f;
-    sphereCol.Bounciness = 0.75f; // Quique elástico acentuado!
-
-    // 5. Câmera Principal da Cena para a Janela Game (Game View)
-    auto mainCam = m_ActiveScene->CreateEntity("Main Camera");
-    mainCam.GetComponent<Overflow::TransformComponent>().Translation = { 0.0f, 3.5f, 9.0f };
-    mainCam.GetComponent<Overflow::TransformComponent>().Rotation = { -15.0f, 0.0f, 0.0f };
-    auto& camComp = mainCam.AddComponent<Overflow::CameraComponent>();
-    camComp.Primary = true;
-    camComp.Camera.SetPosition({ 0.0f, 3.5f, 9.0f });
-    camComp.Camera.SetRotation(-15.0f, -90.0f);
-
-    // 5. Torus 3D (.obj Metálico Ciano)
-    auto torus = m_ActiveScene->CreateEntity("Torus 3D (.obj)");
-    torus.GetComponent<Overflow::TransformComponent>().Translation = { 2.5f, 0.5f, 0.0f };
-    auto& torusMesh = torus.AddComponent<Overflow::MeshComponent>(Overflow::MeshGeometryType::Torus);
-    torusMesh.ModelAsset = m_ActiveScene->GetSharedTorus();
-    torusMesh.Color = { 0.20f, 0.80f, 0.95f, 1.0f };
-    torusMesh.Roughness = 0.25f;
-    torusMesh.Metallic = 0.90f;
-
-    // 6. Satélite Filho da Esfera (Grafo de Cena)
-    auto satellite = m_ActiveScene->CreateCube("Satellite Child", { 0.0f, 1.5f, 0.0f });
-    satellite.GetComponent<Overflow::TransformComponent>().Scale = { 0.35f, 0.35f, 0.35f };
-    satellite.GetComponent<Overflow::TransformComponent>().ParentID = sphere.GetID();
-    auto& satMesh = satellite.GetComponent<Overflow::MeshComponent>();
-    satMesh.Color = { 1.0f, 0.85f, 0.20f, 1.0f };
-    satMesh.Roughness = 0.30f;
-    satMesh.Metallic = 0.50f;
-
-    // 7. Point Light Decorativa (Luz Dourada)
-    auto pointLight = m_ActiveScene->CreateEntity("Point Light (Warm)");
-    pointLight.GetComponent<Overflow::TransformComponent>().Translation = { -2.0f, 2.5f, 1.5f };
-    auto& plComp = pointLight.AddComponent<Overflow::LightComponent>();
-    plComp.Type = Overflow::LightType::Point;
-    plComp.Color = { 1.0f, 0.70f, 0.35f };
-    plComp.Intensity = 4.0f;
-    plComp.Range = 15.0f;
-
-    // 8. Efeito de Particulas (Chafariz de Faiscas Douradas)
-    auto particles = m_ActiveScene->CreateEntity("Spark Particle Fountain");
-    particles.GetComponent<Overflow::TransformComponent>().Translation = { 2.5f, 0.0f, 0.0f };
-    auto& ps = particles.AddComponent<Overflow::ParticleSystemComponent>();
-    ps.StartColor = { 1.0f, 0.75f, 0.2f, 1.0f };
-    ps.EndColor = { 1.0f, 0.15f, 0.05f, 0.0f };
-    ps.BaseVelocity = { 0.0f, 2.8f, 0.0f };
-    ps.Gravity = { 0.0f, -4.0f, 0.0f };
-    ps.EmissionRate = 35.0f;
-    ps.Lifetime = 1.2f;
-    ps.StartSize = 0.15f;
-    ps.EndSize = 0.02f;
-
-    m_SceneHierarchyPanel.SetSelectedEntity(sphere);
+    m_SceneHierarchyPanel.SetSelectedEntity(mainCam);
 }
 
 void EditorLayer::OnDetach() {
@@ -379,28 +300,71 @@ void EditorLayer::OnUpdate(Overflow::Timestep ts) {
         Overflow::Input::SetCursorMode(false);
     }
 
-    // Inicia Orbit se Alt + Botão Esquerdo
-    if (isAltDown && isLeftMouseDown && m_ViewportHovered && !ImGuizmo::IsUsing()) {
+    // Inicia Orbit se Alt + Botão Esquerdo ou Alt + Botão do Meio
+    if ((isAltDown && isLeftMouseDown || isAltDown && isMiddleMouseDown) && m_ViewportHovered && !ImGuizmo::IsUsing()) {
         m_IsCameraOrbiting = true;
     }
-    if (!isLeftMouseDown || !isAltDown) {
+    if ((!isLeftMouseDown && !isMiddleMouseDown) || !isAltDown) {
         m_IsCameraOrbiting = false;
     }
 
-    // Inicia Pan se Botão do Meio
-    if ((isMiddleMouseDown || (isAltDown && isMiddleMouseDown)) && m_ViewportHovered) {
+    // Inicia Pan se Botão do Meio sem Alt
+    if (isMiddleMouseDown && !isAltDown && m_ViewportHovered) {
         m_IsCameraPanning = true;
     }
-    if (!isMiddleMouseDown) {
+    if (!isMiddleMouseDown || isAltDown) {
         m_IsCameraPanning = false;
     }
+
+    // 5. Clique com o botão do meio (Scroll do mouse) define o Pivot de Orbit naquele ponto exato!
+    static bool s_MiddleMouseDownLastFrame = false;
+    if (isMiddleMouseDown && !s_MiddleMouseDownLastFrame && m_ViewportHovered) {
+        if (m_HoveredEntityID > 0 && m_ActiveScene->HasComponent<Overflow::TransformComponent>(static_cast<uint32_t>(m_HoveredEntityID))) {
+            const auto& tc = m_ActiveScene->GetComponent<Overflow::TransformComponent>(static_cast<uint32_t>(m_HoveredEntityID));
+            glm::mat4 world = tc.GetWorldTransform(m_ActiveScene.get());
+            glm::vec3 hitPos = glm::vec3(world[3]);
+            m_Camera.SetFocalPoint(hitPos);
+            m_Camera.SetDistance(std::max(0.5f, glm::length(m_Camera.GetPosition() - hitPos)));
+        } else {
+            ImVec2 mousePos = ImGui::GetMousePos();
+            float mx = mousePos.x - m_ViewportBounds[0].x;
+            float my = mousePos.y - m_ViewportBounds[0].y;
+            glm::vec2 vpSize = m_ViewportBounds[1] - m_ViewportBounds[0];
+            if (vpSize.x > 0.0f && vpSize.y > 0.0f) {
+                float ndcX = (2.0f * mx) / vpSize.x - 1.0f;
+                float ndcY = 1.0f - (2.0f * my) / vpSize.y;
+                glm::mat4 invProj = glm::inverse(m_Camera.GetProjection());
+                glm::mat4 invView = glm::inverse(m_Camera.GetViewMatrix());
+                glm::vec4 rayClip = glm::vec4(ndcX, ndcY, -1.0f, 1.0f);
+                glm::vec4 rayEye = invProj * rayClip;
+                rayEye = glm::vec4(rayEye.x, rayEye.y, -1.0f, 0.0f);
+                glm::vec3 rayDir = glm::normalize(glm::vec3(invView * rayEye));
+                glm::vec3 camPos = m_Camera.GetPosition();
+
+                if (std::abs(rayDir.y) > 0.001f) {
+                    float t = -camPos.y / rayDir.y;
+                    if (t > 0.0f && t < 300.0f) {
+                        glm::vec3 hitPoint = camPos + rayDir * t;
+                        m_Camera.SetFocalPoint(hitPoint);
+                        m_Camera.SetDistance(std::max(0.5f, glm::length(camPos - hitPoint)));
+                    } else {
+                        m_Camera.SetFocalPoint(camPos + rayDir * m_Camera.GetDistance());
+                    }
+                } else {
+                    m_Camera.SetFocalPoint(camPos + rayDir * m_Camera.GetDistance());
+                }
+            }
+        }
+    }
+    s_MiddleMouseDownLastFrame = isMiddleMouseDown;
 
     // Executa os controles da Câmera
     if (m_IsCameraFlying) {
         m_Camera.OnUpdate(ts);
         float wheel = ImGui::GetIO().MouseWheel;
         if (wheel != 0.0f) {
-            m_Camera.SetMoveSpeed(std::clamp(m_Camera.GetMoveSpeed() + wheel * 1.5f, 0.5f, 100.0f));
+            float newSpeed = m_Camera.GetMoveSpeed() * (wheel > 0.0f ? 1.25f : 0.8f);
+            m_Camera.SetMoveSpeed(std::clamp(newSpeed, 0.5f, 500.0f));
         }
     } else if (m_IsCameraOrbiting) {
         m_Camera.Orbit(mouseDelta);
@@ -503,6 +467,9 @@ void EditorLayer::OnImGuiRender() {
     if (m_ShowPreferencesModal)
         RenderPreferencesModal();
 
+    if (m_ShowProjectSettingsModal)
+        RenderProjectSettingsModal();
+
     RenderNewProjectModal();
 
     if (m_ShowCreateScriptModal)
@@ -559,17 +526,32 @@ void EditorLayer::RenderDockSpace() {
             ImGui::DockBuilderSetNodeSize(dockspace_id, ImVec2(viewport->WorkSize.x, viewport->WorkSize.y - toolbarHeight - statusBarHeight));
 
             ImGuiID dock_main_id = dockspace_id;
-            ImGuiID dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.20f, nullptr, &dock_main_id);
-            ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.25f, nullptr, &dock_main_id);
-            ImGuiID dock_id_bottom = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.30f, nullptr, &dock_main_id);
 
-            ImGui::DockBuilderDockWindow("World Outliner", dock_id_left);
-            ImGui::DockBuilderDockWindow("Entity Details", dock_id_right);
-            ImGui::DockBuilderDockWindow("Content Browser", dock_id_bottom);
-            ImGui::DockBuilderDockWindow("Console", dock_id_bottom);
-            ImGui::DockBuilderDockWindow("Performance & Metrics", dock_id_bottom);
-            ImGui::DockBuilderDockWindow("Scene Viewport", dock_main_id);
-            ImGui::DockBuilderDockWindow("Live Simulation", dock_main_id);
+            // 1. Divide a direita para "Entity Details" (Inspetor) ocupando toda a altura direita (23% de largura)
+            ImGuiID dock_id_right = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Right, 0.23f, nullptr, &dock_main_id);
+
+            // 2. Divide a esquerda (22% de largura) para World Outliner e Content Browser
+            ImGuiID dock_id_left = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Left, 0.22f, nullptr, &dock_main_id);
+
+            // 3. Divide a coluna esquerda: Topo (World Outliner: 58%) e Base (Content Browser: 42%)
+            ImGuiID dock_id_left_bottom = ImGui::DockBuilderSplitNode(dock_id_left, ImGuiDir_Down, 0.42f, nullptr, &dock_id_left);
+            ImGuiID dock_id_left_top = dock_id_left;
+
+            // 4. Divide o centro: Topo (Scene Viewport & Game View: 64%) e Base (Console & Metrics: 36%)
+            ImGuiID dock_id_center_bottom = ImGui::DockBuilderSplitNode(dock_main_id, ImGuiDir_Down, 0.36f, nullptr, &dock_main_id);
+            ImGuiID dock_id_center_top = dock_main_id;
+
+            // 5. Acopla as janelas exatamente conforme layout oficial
+            ImGui::DockBuilderDockWindow("World Outliner", dock_id_left_top);
+            ImGui::DockBuilderDockWindow("Content Browser", dock_id_left_bottom);
+
+            ImGui::DockBuilderDockWindow("Scene", dock_id_center_top);
+            ImGui::DockBuilderDockWindow("Game", dock_id_center_top);
+
+            ImGui::DockBuilderDockWindow("Console", dock_id_center_bottom);
+            ImGui::DockBuilderDockWindow("Performance & Metrics", dock_id_center_bottom);
+
+            ImGui::DockBuilderDockWindow("Inspector", dock_id_right);
 
             ImGui::DockBuilderFinish(dockspace_id);
         }
@@ -627,16 +609,183 @@ void EditorLayer::RenderMenuBar() {
                 Redo();
             }
             ImGui::Separator();
+            if (ImGui::MenuItem("Project Settings...")) {
+                m_ShowProjectSettingsModal = true;
+                m_SelectedSettingsTab = 0;
+            }
             if (ImGui::MenuItem("Preferences & External Tools...")) {
                 m_ShowPreferencesModal = true;
             }
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("GameObject")) {
+            if (ImGui::MenuItem("Create Empty")) {
+                auto created = m_ActiveScene->CreateEntity("Empty Entity");
+                m_SceneHierarchyPanel.SetSelectedEntity(created);
+            }
+            ImGui::Separator();
+            if (ImGui::MenuItem("Main Camera")) {
+                auto created = m_ActiveScene->CreateCamera("Main Camera", { 0.0f, 2.0f, 8.0f });
+                m_SceneHierarchyPanel.SetSelectedEntity(created);
+            }
+            if (ImGui::BeginMenu("Camera")) {
+                if (ImGui::MenuItem("Main Camera")) {
+                    auto created = m_ActiveScene->CreateCamera("Main Camera", { 0.0f, 2.0f, 8.0f });
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Camera")) {
+                    auto created = m_ActiveScene->CreateCamera("Camera", { 0.0f, 2.0f, 8.0f });
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("3D Object")) {
+                if (ImGui::MenuItem("Cube")) {
+                    auto created = m_ActiveScene->CreateCube("Cube");
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Sphere")) {
+                    auto created = m_ActiveScene->CreateSphere("Sphere");
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Plane")) {
+                    auto created = m_ActiveScene->CreatePlane("Plane");
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Torus (.obj)")) {
+                    auto created = m_ActiveScene->CreateEntity("Torus");
+                    auto& mc = created.AddComponent<Overflow::MeshComponent>(Overflow::MeshGeometryType::Torus);
+                    mc.ModelAsset = m_ActiveScene->GetSharedTorus();
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Procedural Terrain")) {
+                    auto created = m_ActiveScene->CreateTerrain("Procedural Terrain", 40, 24.0f, 2.5f);
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Light")) {
+                if (ImGui::MenuItem("Directional Light")) {
+                    auto created = m_ActiveScene->CreateDirectionalLight("Directional Light");
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Point Light")) {
+                    auto created = m_ActiveScene->CreateEntity("Point Light");
+                    created.GetComponent<Overflow::TransformComponent>().Translation = { 0.0f, 2.0f, 0.0f };
+                    auto& lc = created.AddComponent<Overflow::LightComponent>();
+                    lc.Type = Overflow::LightType::Point;
+                    lc.Color = { 1.0f, 0.85f, 0.6f };
+                    lc.Intensity = 3.0f;
+                    lc.Range = 12.0f;
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Spot Light")) {
+                    auto created = m_ActiveScene->CreateEntity("Spot Light");
+                    created.GetComponent<Overflow::TransformComponent>().Translation = { 0.0f, 4.0f, 0.0f };
+                    created.GetComponent<Overflow::TransformComponent>().Rotation = { 45.0f, 0.0f, 0.0f };
+                    auto& lc = created.AddComponent<Overflow::LightComponent>();
+                    lc.Type = Overflow::LightType::Spot;
+                    lc.Color = { 0.8f, 0.9f, 1.0f };
+                    lc.Intensity = 5.0f;
+                    lc.Range = 20.0f;
+                    lc.InnerAngle = 18.0f;
+                    lc.OuterAngle = 32.0f;
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Effects")) {
+                if (ImGui::MenuItem("Particle System")) {
+                    auto created = m_ActiveScene->CreateEntity("Particle System");
+                    created.GetComponent<Overflow::TransformComponent>().Translation = { 0.0f, 1.0f, 0.0f };
+                    created.AddComponent<Overflow::ParticleSystemComponent>();
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Audio")) {
+                if (ImGui::MenuItem("Audio Source")) {
+                    auto created = m_ActiveScene->CreateEntity("Audio Source");
+                    created.AddComponent<Overflow::AudioSourceComponent>();
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                if (ImGui::MenuItem("Audio Listener")) {
+                    auto created = m_ActiveScene->CreateEntity("Audio Listener");
+                    created.AddComponent<Overflow::AudioListenerComponent>();
+                    m_SceneHierarchyPanel.SetSelectedEntity(created);
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Component")) {
+            auto selected = m_SceneHierarchyPanel.GetSelectedEntity();
+            bool hasSelected = (bool)selected;
+
+            if (ImGui::BeginMenu("Mesh", hasSelected)) {
+                if (ImGui::MenuItem("Mesh Renderer (PBR)", nullptr, false, !selected.HasComponent<Overflow::MeshComponent>())) {
+                    auto& mesh = selected.AddComponent<Overflow::MeshComponent>(Overflow::MeshGeometryType::Cube);
+                    mesh.ModelAsset = m_ActiveScene->GetSharedCube();
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Rendering", hasSelected)) {
+                if (ImGui::MenuItem("Camera", nullptr, false, !selected.HasComponent<Overflow::CameraComponent>())) {
+                    selected.AddComponent<Overflow::CameraComponent>();
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Light", hasSelected)) {
+                if (ImGui::MenuItem("Light (PBR)", nullptr, false, !selected.HasComponent<Overflow::LightComponent>())) {
+                    selected.AddComponent<Overflow::LightComponent>();
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Physics", hasSelected)) {
+                if (ImGui::MenuItem("Rigidbody 3D", nullptr, false, !selected.HasComponent<Overflow::RigidbodyComponent>())) {
+                    selected.AddComponent<Overflow::RigidbodyComponent>();
+                }
+                if (ImGui::MenuItem("Box Collider", nullptr, false, !selected.HasComponent<Overflow::ColliderComponent>())) {
+                    selected.AddComponent<Overflow::ColliderComponent>(Overflow::ColliderType::Box);
+                }
+                if (ImGui::MenuItem("Sphere Collider", nullptr, false, !selected.HasComponent<Overflow::ColliderComponent>())) {
+                    selected.AddComponent<Overflow::ColliderComponent>(Overflow::ColliderType::Sphere);
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Effects", hasSelected)) {
+                if (ImGui::MenuItem("Particle System", nullptr, false, !selected.HasComponent<Overflow::ParticleSystemComponent>())) {
+                    selected.AddComponent<Overflow::ParticleSystemComponent>();
+                }
+                ImGui::EndMenu();
+            }
+            if (ImGui::BeginMenu("Audio", hasSelected)) {
+                if (ImGui::MenuItem("Audio Source", nullptr, false, !selected.HasComponent<Overflow::AudioSourceComponent>())) {
+                    selected.AddComponent<Overflow::AudioSourceComponent>();
+                }
+                if (ImGui::MenuItem("Audio Listener", nullptr, false, !selected.HasComponent<Overflow::AudioListenerComponent>())) {
+                    selected.AddComponent<Overflow::AudioListenerComponent>();
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("Assets")) {
             if (ImGui::BeginMenu("Create")) {
-                if (ImGui::MenuItem("C++ Script...")) {
+                if (ImGui::MenuItem("Material (.ovmat)...")) {
+                    std::string newPath = "assets/materials/NewMaterial.ovmat";
+                    auto newMat = Overflow::Material::Create("NewMaterial");
+                    newMat->Save(newPath);
+                    ShowToast("Material criado: " + newPath, ImVec4(0.40f, 0.90f, 0.70f, 1.0f));
+                }
+                if (ImGui::MenuItem("C++ Script (OBehaviour)...")) {
                     m_ShowCreateScriptModal = true;
+                }
+                if (ImGui::MenuItem("Scene (.scene)...")) {
+                    NewScene();
                 }
                 ImGui::EndMenu();
             }
@@ -656,10 +805,10 @@ void EditorLayer::RenderMenuBar() {
         }
 
         if (ImGui::BeginMenu("View")) {
-            ImGui::MenuItem("Scene Viewport", nullptr, &m_ShowViewport);
-            ImGui::MenuItem("Live Simulation", nullptr, &m_ShowGameView);
+            ImGui::MenuItem("Scene", nullptr, &m_ShowViewport);
+            ImGui::MenuItem("Game", nullptr, &m_ShowGameView);
             ImGui::MenuItem("World Outliner", nullptr, &m_ShowHierarchy);
-            ImGui::MenuItem("Entity Details", nullptr, &m_ShowInspector);
+            ImGui::MenuItem("Inspector", nullptr, &m_ShowInspector);
             ImGui::MenuItem("Content Browser", nullptr, &m_ShowContentBrowser);
             ImGui::MenuItem("Console", nullptr, &m_ShowConsole);
             ImGui::MenuItem("Performance & Metrics", nullptr, &m_ShowMetrics);
@@ -778,7 +927,7 @@ void EditorLayer::OnScenePlay() {
 
     if (m_MaximizeOnPlay) {
         m_ShowGameView = true;
-        ImGui::SetWindowFocus("Live Simulation");
+        ImGui::SetWindowFocus("Game");
     }
 }
 
@@ -910,7 +1059,7 @@ void EditorLayer::RenderNewProjectModal() {
 void EditorLayer::RenderViewportPanel() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
     ImGuiWindowFlags viewportFlags = ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse;
-    ImGui::Begin("Scene Viewport", &m_ShowViewport, viewportFlags);
+    ImGui::Begin("Scene", &m_ShowViewport, viewportFlags);
 
     m_ViewportFocused = ImGui::IsWindowFocused();
     m_ViewportHovered = ImGui::IsWindowHovered();
@@ -940,7 +1089,7 @@ void EditorLayer::RenderViewportPanel() {
     ImGui::PushStyleVar(ImGuiStyleVar_ChildBorderSize, 1.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(6.0f, 4.0f));
 
-    if (ImGui::BeginChild("##ViewportOverlayGizmos", ImVec2(510.0f, 34.0f), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
+    if (ImGui::BeginChild("##ViewportOverlayGizmos", ImVec2(640.0f, 34.0f), true, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) {
         ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 3.0f);
 
         auto renderGizmoBtn = [this](const char* label, int type) {
@@ -975,6 +1124,17 @@ void EditorLayer::RenderViewportPanel() {
         ImGui::SameLine();
 
         ImGui::Checkbox("Snap", &m_GizmoSnap);
+        ImGui::SameLine();
+
+        // Controle Rápido de Densidade das Nuvens diretamente no topo da Viewport
+        if (m_ActiveScene) {
+            float dens = m_ActiveScene->GetCloudDensityMultiplier();
+            ImGui::SetNextItemWidth(115.0f);
+            if (ImGui::SliderFloat("##QuickCloudDens", &dens, 0.0f, 4.0f, "Clouds: %.1fx")) {
+                m_ActiveScene->SetCloudDensityMultiplier(dens);
+            }
+            if (ImGui::IsItemHovered()) ImGui::SetTooltip("Densidade das Nuvens Volumetricas 3D (0.0x = Ceu Limpo, 4.0x = Super Densas)");
+        }
 
         ImGui::PopStyleVar();
     }
@@ -1133,6 +1293,15 @@ void EditorLayer::RenderViewportPanel() {
                     targetEntity.GetComponent<Overflow::MeshComponent>().TextureAsset = Overflow::Texture2D::Create(path.string());
                     ShowToast("Textura aplicada a: " + targetEntity.GetComponent<Overflow::TagComponent>().Tag, ImVec4(0.35f, 0.90f, 0.50f, 1.0f));
                     OVERFLOW_INFO("Textura aplicada na entidade '{0}': {1}", targetEntity.GetComponent<Overflow::TagComponent>().Tag, path.filename().string());
+                }
+            } else if (ext == ".ovmat" || ext == ".mat") {
+                Overflow::Entity targetEntity = (m_HoveredEntityID > 0) ? Overflow::Entity(static_cast<uint32_t>(m_HoveredEntityID), m_ActiveScene.get()) : m_SceneHierarchyPanel.GetSelectedEntity();
+                if (targetEntity && targetEntity.HasComponent<Overflow::MeshComponent>()) {
+                    auto& mc = targetEntity.GetComponent<Overflow::MeshComponent>();
+                    mc.MaterialPath = path.string();
+                    mc.MaterialAsset = Overflow::Material::Load(path.string());
+                    ShowToast("Material aplicado a: " + targetEntity.GetComponent<Overflow::TagComponent>().Tag + " (" + path.filename().string() + ")", ImVec4(0.40f, 0.90f, 0.70f, 1.0f));
+                    OVERFLOW_INFO("Material aplicado na entidade '{0}': {1}", targetEntity.GetComponent<Overflow::TagComponent>().Tag, path.filename().string());
                 }
             }
         }
@@ -1307,7 +1476,7 @@ void EditorLayer::RenderViewportPanel() {
 
 void EditorLayer::RenderGamePanel() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
-    ImGui::Begin("Live Simulation", &m_ShowGameView);
+    ImGui::Begin("Game", &m_ShowGameView);
 
     m_GameViewportFocused = ImGui::IsWindowFocused();
     m_GameViewportHovered = ImGui::IsWindowHovered();
@@ -1703,6 +1872,333 @@ void EditorLayer::RenderPreferencesModal() {
         if (ImGui::Button("Save & Close", ImVec2(120.0f, 28.0f))) {
             Overflow::EditorPreferences::Save();
             m_ShowPreferencesModal = false;
+            ImGui::CloseCurrentPopup();
+        }
+
+        ImGui::EndPopup();
+    }
+}
+
+void EditorLayer::ApplyTheme(int theme) {
+    ImGuiStyle& style = ImGui::GetStyle();
+    ImVec4* colors = style.Colors;
+
+    if (theme == 0) {
+        // Modern Dark Slate (Default)
+        colors[ImGuiCol_WindowBg] = ImVec4(0.11f, 0.12f, 0.14f, 1.00f);
+        colors[ImGuiCol_Header] = ImVec4(0.20f, 0.23f, 0.28f, 0.85f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.28f, 0.33f, 0.40f, 0.90f);
+        colors[ImGuiCol_Button] = ImVec4(0.20f, 0.23f, 0.28f, 1.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.30f, 0.35f, 0.42f, 1.00f);
+        colors[ImGuiCol_Tab] = ImVec4(0.14f, 0.15f, 0.18f, 0.90f);
+        colors[ImGuiCol_TabHovered] = ImVec4(0.28f, 0.33f, 0.40f, 1.00f);
+        colors[ImGuiCol_TabSelected] = ImVec4(0.20f, 0.23f, 0.28f, 1.00f);
+    } else if (theme == 1) {
+        // Unreal Engine 5 Dark (Deep Obsidian with subtle warm amber accents)
+        colors[ImGuiCol_WindowBg] = ImVec4(0.08f, 0.08f, 0.09f, 1.00f);
+        colors[ImGuiCol_Header] = ImVec4(0.16f, 0.16f, 0.18f, 0.90f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.85f, 0.42f, 0.05f, 0.70f);
+        colors[ImGuiCol_Button] = ImVec4(0.18f, 0.18f, 0.20f, 1.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.85f, 0.42f, 0.05f, 0.85f);
+        colors[ImGuiCol_Tab] = ImVec4(0.12f, 0.12f, 0.14f, 0.90f);
+        colors[ImGuiCol_TabHovered] = ImVec4(0.85f, 0.42f, 0.05f, 0.80f);
+        colors[ImGuiCol_TabSelected] = ImVec4(0.22f, 0.22f, 0.26f, 1.00f);
+    } else if (theme == 2) {
+        // Unity 6 Dark Modern (#282828, Blue accents)
+        colors[ImGuiCol_WindowBg] = ImVec4(0.157f, 0.157f, 0.157f, 1.00f);
+        colors[ImGuiCol_Header] = ImVec4(0.24f, 0.24f, 0.24f, 0.90f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.18f, 0.45f, 0.75f, 0.80f);
+        colors[ImGuiCol_Button] = ImVec4(0.22f, 0.22f, 0.22f, 1.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.28f, 0.50f, 0.80f, 0.90f);
+        colors[ImGuiCol_Tab] = ImVec4(0.18f, 0.18f, 0.18f, 0.90f);
+        colors[ImGuiCol_TabHovered] = ImVec4(0.25f, 0.25f, 0.25f, 1.00f);
+        colors[ImGuiCol_TabSelected] = ImVec4(0.24f, 0.24f, 0.24f, 1.00f);
+    } else if (theme == 3) {
+        // Cyberpunk Obsidian (Deep Night + Neon Cyan/Magenta)
+        colors[ImGuiCol_WindowBg] = ImVec4(0.05f, 0.06f, 0.09f, 1.00f);
+        colors[ImGuiCol_Header] = ImVec4(0.10f, 0.14f, 0.22f, 0.90f);
+        colors[ImGuiCol_HeaderHovered] = ImVec4(0.00f, 0.80f, 0.95f, 0.60f);
+        colors[ImGuiCol_Button] = ImVec4(0.12f, 0.16f, 0.25f, 1.00f);
+        colors[ImGuiCol_ButtonHovered] = ImVec4(0.95f, 0.10f, 0.50f, 0.80f);
+        colors[ImGuiCol_Tab] = ImVec4(0.08f, 0.10f, 0.16f, 0.90f);
+        colors[ImGuiCol_TabHovered] = ImVec4(0.00f, 0.80f, 0.95f, 0.80f);
+        colors[ImGuiCol_TabSelected] = ImVec4(0.15f, 0.20f, 0.32f, 1.00f);
+    } else if (theme == 4) {
+        // Light Studio
+        ImGui::StyleColorsLight(&style);
+    }
+}
+
+void EditorLayer::RenderProjectSettingsModal() {
+    ImGui::OpenPopup("Project & Engine Settings");
+
+    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
+    ImGui::SetNextWindowSize(ImVec2(760.0f, 520.0f));
+
+    if (ImGui::BeginPopupModal("Project & Engine Settings", &m_ShowProjectSettingsModal)) {
+        ImGui::TextColored(ImVec4(0.35f, 0.75f, 1.0f, 1.0f), "Overflow Engine - Configuracoes Globais do Projeto e Engine");
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::BeginTabBar("ProjectSettingsTabBar")) {
+            // -----------------------------------------------------------------
+            // ABA 1: CONFIGURAÇÕES DO PROJETO & FÍSICA
+            // -----------------------------------------------------------------
+            if (ImGui::BeginTabItem("Project Settings")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "Identidade do Projeto:");
+                ImGui::InputText("Nome do Projeto", m_ProjectSettingsName, sizeof(m_ProjectSettingsName));
+                ImGui::InputText("Estudio / Desenvolvedor", m_ProjectSettingsCompany, sizeof(m_ProjectSettingsCompany));
+                ImGui::InputText("Versao da Build", m_ProjectSettingsVersion, sizeof(m_ProjectSettingsVersion));
+                ImGui::InputText("Cena Inicial (Startup)", m_ProjectStartupScene, sizeof(m_ProjectStartupScene));
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::TextColored(ImVec4(0.40f, 0.85f, 1.0f, 1.0f), "Fisica 3D & Simulacao Real-Time:");
+                ImGui::DragFloat3("Gravidade Global (m/s^2)", glm::value_ptr(m_PhysicsGravity), 0.1f);
+                float fpsTarget = 1.0f / m_FixedTimestep;
+                if (ImGui::SliderFloat("Taxa de Atualizacao da Fisica (Hz)", &fpsTarget, 20.0f, 240.0f, "%.0f Hz")) {
+                    m_FixedTimestep = 1.0f / fpsTarget;
+                }
+                ImGui::SliderInt("Sub-passos Maximos", &m_PhysicsSubSteps, 1, 10);
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::Button("Salvar Configuracoes do Projeto", ImVec2(240.0f, 30.0f))) {
+                    ShowToast("Configuracoes do Projeto salvas com sucesso!", ImVec4(0.35f, 0.90f, 0.50f, 1.0f));
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            // -----------------------------------------------------------------
+            // ABA 2: PIPELINE GRÁFICO & RENDERIZAÇÃO
+            // -----------------------------------------------------------------
+            if (ImGui::BeginTabItem("Graphics & Pipeline")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "Modelo de Shading & Pipeline de Renderizacao:");
+                const char* pipelineModels[] = { "Standard PBR (Physically-Based Cook-Torrance GGX)", "Blinn-Phong Clássico", "Wireframe Overdraw" };
+                ImGui::Combo("Shading Model", &m_RenderPipelineChoice, pipelineModels, IM_ARRAYSIZE(pipelineModels));
+
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.45f, 0.85f, 1.0f, 1.0f), "Tone Mapping HDR & Pos-Processamento:");
+                const char* tonemappers[] = { "ACES Film Cinematografico (Unreal/Filme)", "Reinhard Padrão", "Filmic Neutro", "None (Linear Clamped)" };
+                ImGui::Combo("Operador de Tone Mapping", &m_TonemapperChoice, tonemappers, IM_ARRAYSIZE(tonemappers));
+
+                if (m_ActiveScene) {
+                    float exp = m_ActiveScene->GetExposure();
+                    if (ImGui::SliderFloat("Exposicao da Camera (Exposure)", &exp, 0.1f, 5.0f, "%.2fx")) {
+                        m_ActiveScene->SetExposure(exp);
+                    }
+
+                    float vig = m_ActiveScene->GetVignette();
+                    if (ImGui::SliderFloat("Intensidade de Vinheta (Vignette)", &vig, 0.0f, 1.0f, "%.2f")) {
+                        m_ActiveScene->SetVignette(vig);
+                    }
+                }
+
+                ImGui::Checkbox("Anti-Aliasing MSAA 4x", &m_MSAA4x);
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::ColorEdit4("Cor de Limpeza da Viewport (Clear Color)", glm::value_ptr(m_ClearColor));
+
+                ImGui::EndTabItem();
+            }
+
+            // -----------------------------------------------------------------
+            // ABA 3: SOMBRAS & ILUMINAÇÃO
+            // -----------------------------------------------------------------
+            if (ImGui::BeginTabItem("Lighting & Shadows")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "Sombras Dinamicas em Tempo Real (Shadow Mapping):");
+                const char* shadowResolutions[] = { "1024 x 1024 (Performance)", "2048 x 2048 (Alta Fidelidade)", "4096 x 4096 (Ultra / Cinematic)" };
+                ImGui::Combo("Resolucao do Shadow Map", &m_ShadowResolutionChoice, shadowResolutions, IM_ARRAYSIZE(shadowResolutions));
+
+                ImGui::Checkbox("Filtro Suave de Sombras (PCF 16-Tap Poisson Disc)", &m_SoftShadowsPCF);
+                ImGui::SliderFloat("Bias Global de Sombra", &m_GlobalShadowBias, 0.0005f, 0.02f, "%.4f");
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::TextColored(ImVec4(0.40f, 0.85f, 1.0f, 1.0f), "Auxiliares Visuais da Cena:");
+                if (m_ActiveScene) {
+                    bool showIcons = m_ActiveScene->GetShowGizmoIcons();
+                    if (ImGui::Checkbox("Exibir Icones 3D das Luzes e Cameras na Viewport", &showIcons)) {
+                        m_ActiveScene->SetShowGizmoIcons(showIcons);
+                    }
+
+                    bool showFrustums = m_ActiveScene->GetShowCameraFrustums();
+                    if (ImGui::Checkbox("Exibir Piramides de Frustum das Cameras", &showFrustums)) {
+                        m_ActiveScene->SetShowCameraFrustums(showFrustums);
+                    }
+
+                    bool showColliders = m_ActiveScene->GetShowColliders();
+                    if (ImGui::Checkbox("Exibir Wireframes dos Colisores Físicos", &showColliders)) {
+                        m_ActiveScene->SetShowColliders(showColliders);
+                    }
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            // -----------------------------------------------------------------
+            // ABA 4: CÉU ATMOSFÉRICO & NUVENS VOLUMÉTRICAS
+            // -----------------------------------------------------------------
+            if (ImGui::BeginTabItem("Atmosphere & Skybox")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "Atmosfera Procedural Rayleigh & Mie:");
+                ImGui::Checkbox("Atmosfera Dinamica Fisicamente Baseada", &m_DynamicAtmosphere);
+                ImGui::SliderFloat("Intensidade do Sol Diurno", &m_SunIntensity, 0.1f, 10.0f, "%.1fx");
+                ImGui::SliderFloat("Brilho da Lua Noturna", &m_MoonBrightness, 0.1f, 5.0f, "%.1fx");
+                ImGui::SliderFloat("Densidade do Campo Estelar", &m_StarfieldDensity, 0.1f, 3.0f, "%.1fx");
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::TextColored(ImVec4(0.40f, 0.85f, 1.0f, 1.0f), "Nuvens Volumetricas 3D Nativas (Raymarching de Mundo):");
+                if (m_ActiveScene) {
+                    bool enableClouds = m_ActiveScene->GetVolumetricCloudsEnabled();
+                    if (ImGui::Checkbox("Habilitar Nuvens Volumetricas 3D", &enableClouds)) {
+                        m_ActiveScene->SetVolumetricCloudsEnabled(enableClouds);
+                    }
+
+                    float baseAlt = m_ActiveScene->GetCloudBaseAltitude();
+                    float topAlt = m_ActiveScene->GetCloudTopAltitude();
+                    bool altChanged = false;
+                    if (ImGui::SliderFloat("Altitude Base da Camada (m)", &baseAlt, 20.0f, 250.0f, "%.0f m")) altChanged = true;
+                    if (ImGui::SliderFloat("Altitude Topo da Camada (m)", &topAlt, baseAlt + 20.0f, 600.0f, "%.0f m")) altChanged = true;
+                    if (altChanged) {
+                        m_ActiveScene->SetCloudAltitudes(baseAlt, topAlt);
+                    }
+
+                    float dens = m_ActiveScene->GetCloudDensityMultiplier();
+                    if (ImGui::SliderFloat("Multiplicador de Densidade das Nuvens", &dens, 0.0f, 4.0f, "%.2fx")) {
+                        m_ActiveScene->SetCloudDensityMultiplier(dens);
+                    }
+
+                    float cov = m_ActiveScene->GetCloudCoverage();
+                    if (ImGui::SliderFloat("Cobertura do Ceu (Coverage)", &cov, 0.0f, 1.0f, "%.2f")) {
+                        m_ActiveScene->SetCloudCoverage(cov);
+                    }
+
+                    float wind = m_ActiveScene->GetWindSpeed();
+                    if (ImGui::SliderFloat("Velocidade do Vento (m/s)", &wind, 0.0f, 15.0f, "%.1f m/s")) {
+                        m_ActiveScene->SetWindSpeed(wind);
+                    }
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            // -----------------------------------------------------------------
+            // ABA 5: TEMAS VISUAIS & PREFERÊNCIAS DO EDITOR
+            // -----------------------------------------------------------------
+            if (ImGui::BeginTabItem("Editor & Themes")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "Tema Visual da Overflow Engine:");
+                const char* themes[] = {
+                    "Dark Modern Slate (Padrao Overflow Engine)",
+                    "Unreal Engine 5 Dark (Obsidian & Amber)",
+                    "Unity 6 Dark Modern (Chumbo & Blue)",
+                    "Cyberpunk Obsidian (Deep Night & Neon)",
+                    "Light Studio (Visual Claro)"
+                };
+
+                if (ImGui::Combo("Tema do Editor", &m_EditorTheme, themes, IM_ARRAYSIZE(themes))) {
+                    ApplyTheme(m_EditorTheme);
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                ImGui::TextColored(ImVec4(0.40f, 0.85f, 1.0f, 1.0f), "Navegacao e Controle de Camera na Viewport:");
+                float camSpeed = m_Camera.GetMoveSpeed();
+                if (ImGui::SliderFloat("Velocidade de Movimento (m/s)", &camSpeed, 1.0f, 50.0f, "%.1f m/s")) {
+                    m_Camera.SetMoveSpeed(camSpeed);
+                }
+
+                float fov = m_Camera.GetFOV();
+                if (ImGui::SliderFloat("Campo de Visao (FOV)", &fov, 30.0f, 110.0f, "%.0f deg")) {
+                    m_Camera.SetFOV(fov);
+                }
+
+                if (m_ActiveScene) {
+                    bool grid = m_ActiveScene->GetShowGrid();
+                    if (ImGui::Checkbox("Exibir Grade Infinita no Chão (Grid)", &grid)) {
+                        m_ActiveScene->SetShowGrid(grid);
+                    }
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            // -----------------------------------------------------------------
+            // ABA 6: FERRAMENTAS EXTERNAS & IDE
+            // -----------------------------------------------------------------
+            if (ImGui::BeginTabItem("External Tools")) {
+                ImGui::Spacing();
+                ImGui::TextColored(ImVec4(0.95f, 0.80f, 0.40f, 1.0f), "Editor de Codigo / IDE para C++, Shaders e Scripts:");
+                auto currentIDE = Overflow::EditorPreferences::GetPreferredIDE();
+                int selectedChoice = static_cast<int>(currentIDE);
+
+                const char* ideOptions[] = {
+                    "JetBrains Rider (Recomendado para Engines e C++)",
+                    "Microsoft Visual Studio (2022 Community / Pro / Enterprise)",
+                    "Visual Studio Code",
+                    "System Default (Associacao Padrao do Windows)",
+                    "Custom Executable Path"
+                };
+
+                for (int i = 0; i < 5; i++) {
+                    if (ImGui::RadioButton(ideOptions[i], selectedChoice == i)) {
+                        selectedChoice = i;
+                        Overflow::EditorPreferences::SetPreferredIDE(static_cast<Overflow::CodeEditorChoice>(i));
+                    }
+                }
+
+                if (selectedChoice == static_cast<int>(Overflow::CodeEditorChoice::Custom)) {
+                    static char s_CustomPath[512] = "";
+                    if (s_CustomPath[0] == '\0') {
+                        strncpy_s(s_CustomPath, Overflow::EditorPreferences::GetCustomIDEPath().c_str(), sizeof(s_CustomPath));
+                    }
+                    if (ImGui::InputText("##CustomIDEPath", s_CustomPath, sizeof(s_CustomPath))) {
+                        Overflow::EditorPreferences::SetCustomIDEPath(s_CustomPath);
+                    }
+                }
+
+                ImGui::Spacing();
+                ImGui::Separator();
+                ImGui::Spacing();
+
+                if (ImGui::Button("Testar Abertura da IDE", ImVec2(200.0f, 28.0f))) {
+                    Overflow::EditorPreferences::OpenFileInIDE("CMakeLists.txt");
+                    ShowToast("Disparando abertura da IDE configurada...", ImVec4(0.35f, 0.85f, 0.5f, 1.0f));
+                }
+
+                ImGui::EndTabItem();
+            }
+
+            ImGui::EndTabBar();
+        }
+
+        ImGui::Spacing();
+        ImGui::Separator();
+        ImGui::Spacing();
+
+        if (ImGui::Button("Fechar (Close)", ImVec2(120.0f, 30.0f))) {
+            Overflow::EditorPreferences::Save();
+            m_ShowProjectSettingsModal = false;
             ImGui::CloseCurrentPopup();
         }
 

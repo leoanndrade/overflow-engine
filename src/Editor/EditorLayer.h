@@ -46,6 +46,8 @@ private:
     void RenderAboutModal();
     void RenderCreateScriptModal();
     void RenderPreferencesModal();
+    void RenderProjectSettingsModal();
+    void ApplyTheme(int theme);
 
     void CreateDefaultScene();
 
@@ -170,6 +172,39 @@ private:
     bool m_ShowGameStats = true;
     bool m_ShowGameHUD = true;
     bool m_MuteAudio = false;
+
+    // Configurações do Projeto & Engine
+    bool m_ShowProjectSettingsModal = false;
+    int m_SelectedSettingsTab = 0;
+    char m_ProjectSettingsName[128] = "Overflow Engine Project";
+    char m_ProjectSettingsCompany[128] = "Overflow Studios";
+    char m_ProjectSettingsVersion[64] = "1.0.0";
+    char m_ProjectStartupScene[256] = "assets/scenes/Main.scene";
+    glm::vec3 m_PhysicsGravity = { 0.0f, -9.81f, 0.0f };
+    float m_FixedTimestep = 1.0f / 60.0f;
+    int m_PhysicsSubSteps = 3;
+
+    // Configurações Gráficas & Pipeline
+    int m_RenderPipelineChoice = 0;
+    int m_TonemapperChoice = 0;
+    int m_ShadowResolutionChoice = 1; // 0: 1024, 1: 2048, 2: 4096
+    bool m_SoftShadowsPCF = true;
+    float m_GlobalShadowBias = 0.003f;
+    bool m_MSAA4x = true;
+
+    // Configurações de Atmosfera & Nuvens
+    bool m_DynamicAtmosphere = true;
+    bool m_VolumetricClouds = true;
+    float m_CloudBase = 80.0f;
+    float m_CloudTop = 220.0f;
+    float m_CloudDensity = 1.0f;
+    float m_WindSpeed = 1.5f;
+    float m_SunIntensity = 2.0f;
+    float m_MoonBrightness = 1.0f;
+    float m_StarfieldDensity = 1.0f;
+
+    // Preferências do Editor & Temas
+    int m_EditorTheme = 0; // 0: Modern Slate, 1: Unreal Dark, 2: Unity Dark, 3: Cyberpunk, 4: Light
 
     // Métricas
     float m_LastFrameTimeMs = 0.0f;
